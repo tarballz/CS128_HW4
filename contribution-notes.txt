@@ -1,0 +1,10 @@
+tdersch :  Docker network configuration, made forwarding
+	   protocol function correctly.
+peschwar:  Docker / Python debugging and polishing, as
+	   well as verifying 0 Failure in accordance
+	   with the test script.
+bmccoid :  Migrated us to Sanic framework and set up
+	   the forwarding protocol.
+
+Everything else we worked on togetehr, in person,
+on the same workstation.

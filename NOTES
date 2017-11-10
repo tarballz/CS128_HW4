@@ -1,0 +1,29 @@
+# Runs a docker image with tag "hw2"
+docker build -t hw2 .
+
+# Runs the docker image, and forwards our port 8080 to
+# the container's port 8080
+docker run -p 8080:8080 hw2
+
+# Stops ALL docker containers
+docker stop $(docker ps -a -q)
+
+# Force remove image (Paytons error)
+docker rmi -f image_name:version
+
+
+##################### HW2 ############################
+
+docker run -p 8083:8080 --net=mynet --ip=10.0.0.20 -e IP=10.0.0.20 -e PORT=8080 IMAGE_NAME
+
+# Get rid of all unused networks
+docker network prune
+
+# Get rid of all unused containers
+docker container prune
+
+# Connect our container to our network
+docker network connect mynet image_name:version
+
+# Curl to query our container
+curl 'localhost:8080/kvs/abc' -d 'val=123' -X PUT
