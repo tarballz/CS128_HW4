@@ -104,13 +104,14 @@ def del_kv(key):
 
 
 if __name__ == '__main__':
-    K      = os.getenv('K', None)
-    VIEW   = os.getenv('VIEW', None)
+    K      = os.getenv('K', 3)
+    VIEW   = os.getenv('VIEW', "10.0.0.21:8080,10.0.0.22:8080,10.0.0.23:8080,10.0.0.24:8080")
     IPPORT = os.getenv('IPPORT', None)
     all_nodes     = []
     replica_nodes = []
     proxy_nodes   = []
     degraded_mode = False
+    vc = {}
 
     if IPPORT is not None:
         IP = IPPORT.split(':')[0]
@@ -121,11 +122,18 @@ if __name__ == '__main__':
 
     if VIEW is not None and K is not None:
         all_nodes = VIEW.split(',')
+        # Strips out PORT field, seems unnecessary as they're all 8080.
+        for node in all_nodes:
+            node = node.split(':')[0]
+            # Init vc  dictionary
+            vc[node] = 0
+        print(vc)
         if len(VIEW) >= K:
             replica_nodes = VIEW[0:(K + 1)]
             proxy_nodes   = VIEW[(K + 1)::]
         else:
             degraded_mode = True
+        
 
     
 
