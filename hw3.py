@@ -1,4 +1,5 @@
 import os
+import collections
 from flask import Flask
 from flask import request
 from flask import jsonify
@@ -23,20 +24,22 @@ def add_kv(key):
     print(request.values.get('val'))
     print("*" * 80)
     # if MAINIP is None:
-    if len(key) > 200 or len(key) < 1:
-        status_code = 403
-        response_data["result"] = 'Error'
-        response_data["msg"] = 'Key not valid'
+    # if len(key) > 200 or len(key) < 1:
+    #     status_code = 403
+    #     response_data["result"] = 'Error'
+    #     response_data["msg"] = 'Key not valid'
+    # else:
+    value = request.values.get('val')
+    causal_payload = request.values.get('causal_payload')
+    if key in KVStore:
+        response_data["replaced"] = 'True'
+        response_data["msg"] = "Value of existing key replaced"
     else:
-        if key in KVStore:
-            response_data["replaced"] = 'True'
-            response_data["msg"] = "Value of existing key replaced"
-        else:
-            response_data["replaced"] = 'False'
-            response_data["msg"] = "New key created"
-            status_code = 201
-        # return dumps({'result': 'Error', 'msg': 'No value provided'}), 403, {'Content-Type': 'application/json'}
-        KVStore[str(key)] = request.values.get('val')
+        response_data["replaced"] = 'False'
+        response_data["msg"] = "New key created"
+        status_code = 201
+    # return dumps({'result': 'Error', 'msg': 'No value provided'}), 403, {'Content-Type': 'application/json'}
+    KVStore[str(key)] = request.values.get('val')
     return dumps(response_data), status_code, {'Content-Type': 'application/json'}
     """else:
         print ("hoasdla")
@@ -61,9 +64,9 @@ def add_kv(key):
 
 @app.route('/kv-store/<key>', methods=['GET'])
 def get_kv(key):
-    # if MAINIP is None:
     response_data = {}
     status_code = 200
+    causal_payload = request.values.get('causal_payload')
     if key in KVStore:
         response_data["msg"] = "Success"
         response_data["value"] = KVStore[str(key)]
@@ -82,6 +85,26 @@ def get_kv(key):
             response_dump = dumps({})"""
     return dumps({'somehow': 'this gets returned'}), 501, {'Content-Type': 'application/json'}
 
+@app.route('/kv-store/get_node_details', methods=['GET'])
+def get_node_details():
+    response_data = {}
+    status_code = 200
+    response_data["result"] = "success"
+    if IPPORT in replica_nodes:
+        response_data["replica"] = "Yes"
+    elif IPPORT in proxy_nodes:
+        response_data["replica"] = "No"
+    else:
+        response_data["replica"] = "ERROR!!" # Hopefully never gets here.
+    return jsonify(dumps(response_data)), status_code
+
+@app.route('/kv-store/get_all_replicas', methods=['GET'])
+def get_all_replicas():
+    response_data = {}
+    status_code = 200
+    response_data["result"] = "success"
+    response_data["replicas"] = replica_nodes
+    return jsonify(dumps(response_data)), status_code
 
 @app.route('/kv-store/<key>', methods=['DELETE'])
 def del_kv(key):
@@ -111,7 +134,7 @@ if __name__ == '__main__':
     replica_nodes = []
     proxy_nodes   = []
     degraded_mode = False
-    vc = {}
+    vc = collections.OrderedDict()
 
     if IPPORT is not None:
         IP = IPPORT.split(':')[0]
