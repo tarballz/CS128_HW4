@@ -1,5 +1,6 @@
 import os
 import collections
+import time
 from flask import Flask
 from flask import request
 from flask import jsonify
@@ -14,6 +15,7 @@ KVStore = {}
 K = 0
 VIEW = None
 IPPORT = '0.0.0.0:8080'
+
 
 
 @app.route('/kv-store/<key>', methods=['PUT'])
@@ -39,7 +41,7 @@ def add_kv(key):
         response_data["msg"] = "New key created"
         status_code = 201
     # return dumps({'result': 'Error', 'msg': 'No value provided'}), 403, {'Content-Type': 'application/json'}
-    KVStore[str(key)] = request.values.get('val')
+    KVStore[key] = request.values.get('val')
     return dumps(response_data), status_code, {'Content-Type': 'application/json'}
     """else:
         print ("hoasdla")
@@ -125,8 +127,16 @@ def del_kv(key):
         return dumps(res.json()), res.status_code, {'Content-Type': 'application/json'}"""
     return dumps({}), 501, {'Content-Type': 'application/json'}
 
+# Element should be created for every new Write issued.
+class Element:
+    def __init__(self, key, value, causal_payload):
+        self.key = key
+        self.value = value
+        self.causal_payload = causal_payload
+        self.node_id = list(vc.keys()).index(IP)
+        self.timestamp = int(time.time())
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     K      = os.getenv('K', 3)
     VIEW   = os.getenv('VIEW', "10.0.0.21:8080,10.0.0.22:8080,10.0.0.23:8080,10.0.0.24:8080")
     IPPORT = os.getenv('IPPORT', None)
@@ -156,9 +166,6 @@ if __name__ == '__main__':
             proxy_nodes   = VIEW[(K + 1)::]
         else:
             degraded_mode = True
-        
-
-    
-
+            replica_nodes = VIEW
 
     app.run(host=IP, port=PORT)
