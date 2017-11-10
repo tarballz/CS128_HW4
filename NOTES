@@ -1,9 +1,9 @@
-# Runs a docker image with tag "hw2"
-docker build -t hw2 .
+# Runs a docker image with tag "hw3"
+docker build -t hw3 .
 
 # Runs the docker image, and forwards our port 8080 to
 # the container's port 8080
-docker run -p 8080:8080 hw2
+docker run -p 8080:8080 hw3
 
 # Stops ALL docker containers
 docker stop $(docker ps -a -q)
@@ -27,3 +27,6 @@ docker network connect mynet image_name:version
 
 # Curl to query our container
 curl 'localhost:8080/kvs/abc' -d 'val=123' -X PUT
+
+##################### HW3 ############################
+
