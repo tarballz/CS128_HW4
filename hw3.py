@@ -33,16 +33,19 @@ def add_kv(key):
     # else:
     value = request.values.get('val')
     causal_payload = request.values.get('causal_payload')
+    #if IP in replica_nodes:
     if key in KVStore:
-        response_data["replaced"] = 'True'
-        response_data["msg"] = "Value of existing key replaced"
+        # Have to make sure new causal payload > old causal payload?
+        compare_vc(current_vc, causal_payload)
+        KVStore[key] = Element(key, value, causal_payload)
     else:
-        response_data["replaced"] = 'False'
-        response_data["msg"] = "New key created"
-        status_code = 201
-    # return dumps({'result': 'Error', 'msg': 'No value provided'}), 403, {'Content-Type': 'application/json'}
-    KVStore[key] = request.values.get('val')
+        KVStore[key] = Element(key, value, causal_payload)
+    response_data["result"]         = "success"
+    response_data["node_id"]        = KVStore[key].node_id
+    response_data["causal_payload"] = KVStore[key].causal_payload
+    response_data["timestamp"]      = KVStore[key].timestamp
     return dumps(response_data), status_code, {'Content-Type': 'application/json'}
+        # return dumps({'result': 'Error', 'msg': 'No value provided'}), 403, {'Content-Type': 'application/json'}
     """else:
         print ("hoasdla")
         print (key)
@@ -72,10 +75,12 @@ def get_kv(key):
     status_code = 200
     causal_payload = request.values.get('causal_payload')
     if key in KVStore:
-        response_data["msg"] = "Success"
-        response_data["value"] = KVStore[str(key)]
+        response_data["result"]         = "success"
+        response_data["node_id"]        = KVStore[key].node_id
+        response_data["causal_payload"] = KVStore[key].causal_payload
+        response_data["timestamp"]      = KVStore[key].timestamp
     else:
-        response_data["msg"] = 'Key does not exist'
+        response_data["msg"]    = 'Key does not exist'
         response_data["result"] = 'Error'
         status_code = 404
     return dumps(response_data), status_code, {'Content-Type': 'application/json'}
@@ -139,13 +144,18 @@ class Element:
     def __init__(self, key, value, causal_payload):
         self.key = key
         self.value = value
+<<<<<<< HEAD
         self.causal_payload = split_cp(causal_payload)  # vector clock
+=======
+        self.causal_payload = causal_payload  # vector clock
+>>>>>>> aab2e85ed912e034300170e934079480964bfbe5
         self.node_id = list(current_vc.keys()).index(IP)
         self.timestamp = int(time.time()) # @TODO: do we need to worry about extra precision?
                                           # because this truncates the decimal portion...
 
 
 
+<<<<<<< HEAD
 def split_cp(payload):
     return [int(a) for a in payload.split('.')]
 
@@ -154,6 +164,13 @@ def compare_vc(vc, cp):
     print(vc)
     cp = split_cp(cp)
     compared_clocks = [((o <= vc[i]), (o < vc[i])) for i, o in enumerate(cp)]
+=======
+def compare_vc(vc_in, cp_in):
+    vc_in = vc_in.values()
+    normalized_cp = [int(a) for a in cp_in.split('.')]
+    print(normalized_cp)
+    compared_clocks = [((o <= vc_in[i]), (o < vc_in[i])) for i, o in enumerate(normalized_cp)]
+>>>>>>> aab2e85ed912e034300170e934079480964bfbe5
     print(compared_clocks)
     # 1 -- cp > vc
     # 0 -- cp = vc
@@ -164,8 +181,10 @@ def compare_vc(vc, cp):
 
 if __name__ == "__main__":
     K = os.getenv('K', 3)
+    # VIEW = os.getenv(
+    #     'VIEW', "10.0.0.21:8080,10.0.0.22:8080,10.0.0.23:8080,10.0.0.24:8080")
     VIEW = os.getenv(
-        'VIEW', "10.0.0.21:8080,10.0.0.22:8080,10.0.0.23:8080,10.0.0.24:8080")
+        'VIEW', "0.0.0.0:8080")
     IPPORT = os.getenv('IPPORT', None)
     all_nodes = []
     replica_nodes = []
@@ -184,7 +203,11 @@ if __name__ == "__main__":
         # Strips out PORT field, seems unnecessary as they're all 8080.
         for node in all_nodes:
             node = node.split(':')[0]
+<<<<<<< HEAD
             # Init vc dictionary
+=======
+            # Init current_vc dictionary
+>>>>>>> aab2e85ed912e034300170e934079480964bfbe5
             current_vc[node] = 0
         print(current_vc)
         if len(VIEW) >= K:
