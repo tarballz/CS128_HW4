@@ -15,7 +15,7 @@ KVStore = {}
 K = None
 VIEW = None
 IPPORT = '0.0.0.0:8080'
-vc = collections.OrderedDict()
+current_vc = collections.OrderedDict()
 
 
 @app.route('/kv-store/<key>', methods=['PUT'])
@@ -33,16 +33,18 @@ def add_kv(key):
     # else:
     value = request.values.get('val')
     causal_payload = request.values.get('causal_payload')
-    if IP in replica_nodes:
-        if key in KVStore:
-            # Have to make sure new causal payload > old causal payload?
-            KVStore[key] = Element(key, value, causal_payload)
-        else:
-            KVStore[key] = Element(key, value, causal_payload)
-        response_data["result"]         = "success"
-        response_data["node_id"]        = KVStore[key].node_id
-        response_data["causal_payload"] = KVStore[key].causal_payload
-        response_data["timestamp"]      = KVStore[key].timestamp
+    #if IP in replica_nodes:
+    if key in KVStore:
+        # Have to make sure new causal payload > old causal payload?
+        compare_vc(current_vc, causal_payload)
+        KVStore[key] = Element(key, value, causal_payload)
+    else:
+        KVStore[key] = Element(key, value, causal_payload)
+    response_data["result"]         = "success"
+    response_data["node_id"]        = KVStore[key].node_id
+    response_data["causal_payload"] = KVStore[key].causal_payload
+    response_data["timestamp"]      = KVStore[key].timestamp
+    return dumps(response_data), status_code, {'Content-Type': 'application/json'}
         # return dumps({'result': 'Error', 'msg': 'No value provided'}), 403, {'Content-Type': 'application/json'}
     """else:
         print ("hoasdla")
@@ -73,10 +75,12 @@ def get_kv(key):
     status_code = 200
     causal_payload = request.values.get('causal_payload')
     if key in KVStore:
-        response_data["msg"] = "Success"
-        response_data["value"] = KVStore[str(key)]
+        response_data["result"]         = "success"
+        response_data["node_id"]        = KVStore[key].node_id
+        response_data["causal_payload"] = KVStore[key].causal_payload
+        response_data["timestamp"]      = KVStore[key].timestamp
     else:
-        response_data["msg"] = 'Key does not exist'
+        response_data["msg"]    = 'Key does not exist'
         response_data["result"] = 'Error'
         status_code = 404
     return dumps(response_data), status_code, {'Content-Type': 'application/json'}
@@ -141,23 +145,26 @@ class Element:
         self.key = key
         self.value = value
         self.causal_payload = causal_payload  # vector clock
-        self.node_id = list(vc.keys()).index(IP)
+        self.node_id = list(current_vc.keys()).index(IP)
         self.timestamp = int(time.time()) # @TODO: do we need to worry about extra precision?
                                           # because this truncates the decimal portion...
 
 
 
-def compare_vc(vc, cp):
-    normalized_cp = [int(a) for a in cp.split('.')]
+def compare_vc(vc_in, cp_in):
+    vc_in = vc_in.values()
+    normalized_cp = [int(a) for a in cp_in.split('.')]
     print(normalized_cp)
-    compared_clocks = [((o <= vc[i]), (o < vc[i])) for i, o in enumerate(normalized_cp)]
+    compared_clocks = [((o <= vc_in[i]), (o < vc_in[i])) for i, o in enumerate(normalized_cp)]
     print(compared_clocks)
     return compared_clocks
 
 if __name__ == "__main__":
     K = os.getenv('K', 3)
+    # VIEW = os.getenv(
+    #     'VIEW', "10.0.0.21:8080,10.0.0.22:8080,10.0.0.23:8080,10.0.0.24:8080")
     VIEW = os.getenv(
-        'VIEW', "10.0.0.21:8080,10.0.0.22:8080,10.0.0.23:8080,10.0.0.24:8080")
+        'VIEW', "0.0.0.0:8080")
     IPPORT = os.getenv('IPPORT', None)
     all_nodes = []
     replica_nodes = []
@@ -176,9 +183,9 @@ if __name__ == "__main__":
         # Strips out PORT field, seems unnecessary as they're all 8080.
         for node in all_nodes:
             node = node.split(':')[0]
-            # Init vc dictionary
-            vc[node] = 0
-        print(vc)
+            # Init current_vc dictionary
+            current_vc[node] = 0
+        print(current_vc)
         if len(VIEW) >= K:
             replica_nodes = VIEW[0:(K + 1)]
             proxy_nodes = VIEW[(K + 1)::]
