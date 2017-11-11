@@ -12,11 +12,10 @@ from urllib3.exceptions import NewConnectionError
 
 app = Flask(__name__)
 KVStore = {}
-vc = collections.OrderedDict()
 K = None
 VIEW = None
 IPPORT = '0.0.0.0:8080'
-        
+vc = collections.OrderedDict()
 
 
 @app.route('/kv-store/<key>', methods=['PUT'])
@@ -59,12 +58,13 @@ def add_kv(key):
         try:
             response_dump = dumps(res.json())
         except decoder.JSONDecodeError:
+from urllib3.exceptions import NewConnectionError
+
             response_dump = dumps({})
         return response_dump, res.status_code, {'Content-Type': 'application/json'}"""
-        # return response_dump, res.status_code, {'Content-Type': 'application/json'}
-        # we are a forwarder node
-    # return dumps({}), 501, {'Content-Type': 'application/json'}
-    return dumps(response_data), status_code, {'Content-Type': 'application/json'}
+    # return response_dump, res.status_code, {'Content-Type': 'application/json'}
+    # we are a forwarder node
+    return dumps({}), 501, {'Content-Type': 'application/json'}
 
 
 @app.route('/kv-store/<key>', methods=['GET'])
@@ -90,6 +90,7 @@ def get_kv(key):
             response_dump = dumps({})"""
     return dumps({'somehow': 'this gets returned'}), 501, {'Content-Type': 'application/json'}
 
+
 @app.route('/kv-store/get_node_details', methods=['GET'])
 def get_node_details():
     response_data = {}
@@ -100,8 +101,9 @@ def get_node_details():
     elif IPPORT in proxy_nodes:
         response_data["replica"] = "No"
     else:
-        response_data["replica"] = "ERROR!!" # Hopefully never gets here.
+        response_data["replica"] = "ERROR!!"  # Hopefully never gets here.
     return jsonify(dumps(response_data)), status_code
+
 
 @app.route('/kv-store/get_all_replicas', methods=['GET'])
 def get_all_replicas():
@@ -110,6 +112,7 @@ def get_all_replicas():
     response_data["result"] = "success"
     response_data["replicas"] = replica_nodes
     return jsonify(dumps(response_data)), status_code
+
 
 @app.route('/kv-store/<key>', methods=['DELETE'])
 def del_kv(key):
@@ -131,21 +134,34 @@ def del_kv(key):
     return dumps({}), 501, {'Content-Type': 'application/json'}
 
 # Element should be created for every new Write issued.
+
+
 class Element:
     def __init__(self, key, value, causal_payload):
         self.key = key
         self.value = value
-        self.causal_payload = causal_payload
+        self.causal_payload = causal_payload  # vector clock
         self.node_id = list(vc.keys()).index(IP)
-        self.timestamp = int(time.time())
+        self.timestamp = int(time.time()) # @TODO: do we need to worry about extra precision?
+                                          # because this truncates the decimal portion...
+
+
+
+def compare_vc(vc, cp):
+    normalized_cp = [int(a) for a in cp.split('.')]
+    print(normalized_cp)
+    compared_clocks = [((o <= vc[i]), (o < vc[i])) for i, o in enumerate(normalized_cp)]
+    print(compared_clocks)
+    return compared_clocks
 
 if __name__ == "__main__":
-    K      = os.getenv('K', 3)
-    VIEW   = os.getenv('VIEW', "10.0.0.21:8080,10.0.0.22:8080,10.0.0.23:8080,10.0.0.24:8080")
+    K = os.getenv('K', 3)
+    VIEW = os.getenv(
+        'VIEW', "10.0.0.21:8080,10.0.0.22:8080,10.0.0.23:8080,10.0.0.24:8080")
     IPPORT = os.getenv('IPPORT', None)
-    all_nodes     = []
+    all_nodes = []
     replica_nodes = []
-    proxy_nodes   = []
+    proxy_nodes = []
     degraded_mode = False
 
     if IPPORT is not None:
@@ -160,12 +176,12 @@ if __name__ == "__main__":
         # Strips out PORT field, seems unnecessary as they're all 8080.
         for node in all_nodes:
             node = node.split(':')[0]
-            # Init vc  dictionary
+            # Init vc dictionary
             vc[node] = 0
         print(vc)
         if len(VIEW) >= K:
             replica_nodes = VIEW[0:(K + 1)]
-            proxy_nodes   = VIEW[(K + 1)::]
+            proxy_nodes = VIEW[(K + 1)::]
         else:
             degraded_mode = True
             replica_nodes = VIEW
