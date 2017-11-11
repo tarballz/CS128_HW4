@@ -146,12 +146,12 @@ class Element:
 
 
 
-def compare_vc(cp):
+def compare_vc(vc, cp):
     normalized_cp = [int(a) for a in cp.split('.')]
     print(normalized_cp)
     compared_clocks = [((o <= vc[i]), (o < vc[i])) for i, o in enumerate(normalized_cp)]
     print(compared_clocks)
-
+    return compared_clocks
 
 if __name__ == "__main__":
     K = os.getenv('K', 3)
