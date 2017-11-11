@@ -15,7 +15,7 @@ KVStore = {}
 K = None
 VIEW = None
 IPPORT = '0.0.0.0:8080'
-vc = collections.OrderedDict()
+current_vc = collections.OrderedDict()
 
 
 @app.route('/kv-store/<key>', methods=['PUT'])
@@ -139,19 +139,28 @@ class Element:
     def __init__(self, key, value, causal_payload):
         self.key = key
         self.value = value
-        self.causal_payload = causal_payload  # vector clock
-        self.node_id = list(vc.keys()).index(IP)
+        self.causal_payload = split_cp(causal_payload)  # vector clock
+        self.node_id = list(current_vc.keys()).index(IP)
         self.timestamp = int(time.time()) # @TODO: do we need to worry about extra precision?
                                           # because this truncates the decimal portion...
 
 
 
+def split_cp(payload):
+    return [int(a) for a in payload.split('.')]
+
 def compare_vc(vc, cp):
-    normalized_cp = [int(a) for a in cp.split('.')]
-    print(normalized_cp)
-    compared_clocks = [((o <= vc[i]), (o < vc[i])) for i, o in enumerate(normalized_cp)]
+    vc = vc.values()
+    print(vc)
+    cp = split_cp(cp)
+    compared_clocks = [((o <= vc[i]), (o < vc[i])) for i, o in enumerate(cp)]
     print(compared_clocks)
+    # 1 -- cp > vc
+    # 0 -- cp = vc
+    # -1 -- cp < vc
     return compared_clocks
+
+
 
 if __name__ == "__main__":
     K = os.getenv('K', 3)
@@ -176,8 +185,8 @@ if __name__ == "__main__":
         for node in all_nodes:
             node = node.split(':')[0]
             # Init vc dictionary
-            vc[node] = 0
-        print(vc)
+            current_vc[node] = 0
+        print(current_vc)
         if len(VIEW) >= K:
             replica_nodes = VIEW[0:(K + 1)]
             proxy_nodes = VIEW[(K + 1)::]
