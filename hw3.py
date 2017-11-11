@@ -12,10 +12,11 @@ from urllib3.exceptions import NewConnectionError
 
 app = Flask(__name__)
 KVStore = {}
-K = 0
+vc = collections.OrderedDict()
+K = None
 VIEW = None
 IPPORT = '0.0.0.0:8080'
-
+        
 
 
 @app.route('/kv-store/<key>', methods=['PUT'])
@@ -33,16 +34,17 @@ def add_kv(key):
     # else:
     value = request.values.get('val')
     causal_payload = request.values.get('causal_payload')
-    if key in KVStore:
-        response_data["replaced"] = 'True'
-        response_data["msg"] = "Value of existing key replaced"
-    else:
-        response_data["replaced"] = 'False'
-        response_data["msg"] = "New key created"
-        status_code = 201
-    # return dumps({'result': 'Error', 'msg': 'No value provided'}), 403, {'Content-Type': 'application/json'}
-    KVStore[key] = request.values.get('val')
-    return dumps(response_data), status_code, {'Content-Type': 'application/json'}
+    if IP in replica_nodes:
+        if key in KVStore:
+            # Have to make sure new causal payload > old causal payload?
+            KVStore[key] = Element(key, value, causal_payload)
+        else:
+            KVStore[key] = Element(key, value, causal_payload)
+        response_data["result"]         = "success"
+        response_data["node_id"]        = KVStore[key].node_id
+        response_data["causal_payload"] = KVStore[key].causal_payload
+        response_data["timestamp"]      = KVStore[key].timestamp
+        # return dumps({'result': 'Error', 'msg': 'No value provided'}), 403, {'Content-Type': 'application/json'}
     """else:
         print ("hoasdla")
         print (key)
@@ -61,7 +63,8 @@ def add_kv(key):
         return response_dump, res.status_code, {'Content-Type': 'application/json'}"""
         # return response_dump, res.status_code, {'Content-Type': 'application/json'}
         # we are a forwarder node
-    return dumps({}), 501, {'Content-Type': 'application/json'}
+    # return dumps({}), 501, {'Content-Type': 'application/json'}
+    return dumps(response_data), status_code, {'Content-Type': 'application/json'}
 
 
 @app.route('/kv-store/<key>', methods=['GET'])
@@ -144,7 +147,6 @@ if __name__ == "__main__":
     replica_nodes = []
     proxy_nodes   = []
     degraded_mode = False
-    vc = collections.OrderedDict()
 
     if IPPORT is not None:
         IP = IPPORT.split(':')[0]
