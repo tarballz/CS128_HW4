@@ -106,7 +106,7 @@ def kvs_response(request, key):
                 new_entry = True
 
             # if causal_payload > current_vc
-            if compare_vc(cp_list, list(current_vc.values())) == 1:
+            if compare_vc(cp_list, list(current_vc.values())) > -1:
                 print ("OLD VC:")
                 print (current_vc)
                 # Gross-ass way to update current_vc
@@ -126,20 +126,6 @@ def kvs_response(request, key):
                 return Response(
                     {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": causal_payload,
                      "timestamp": existing_timestamp}, status=status.HTTP_200_OK)
-            # Vector clocks are same value, have to compare timestamps.
-            elif compare_vc(cp_list, list(current_vc.values())) == 0:
-                # if existing_timestamp < new_timestamp:
-                entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
-                                                                                   'causal_payload': causal_payload,
-                                                                                   'node_id': node_id,
-                                                                                   'timestamp': existing_timestamp})
-                return Response({'result': 'success', 'value': input_value, 'node_id': node_id,
-                                 'causal_payload': causal_payload, 'timestamp': existing_timestamp},
-                                status=status.HTTP_200_OK)
-                # Can't go back in time, reject incoming PUT
-                # elif existing_timestamp > timestamp:
-                    #return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
-                                    #status=status.HTTP_406_NOT_ACCEPTABLE)
 
             # causal payload < current_vc
             else:
