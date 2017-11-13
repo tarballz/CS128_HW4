@@ -144,20 +144,40 @@ class Element:
     def __init__(self, key, value, causal_payload):
         self.key = key
         self.value = value
+<<<<<<< HEAD
+        self.causal_payload = split_cp(causal_payload)  # vector clock
+=======
         self.causal_payload = causal_payload  # vector clock
+>>>>>>> aab2e85ed912e034300170e934079480964bfbe5
         self.node_id = list(current_vc.keys()).index(IP)
         self.timestamp = int(time.time()) # @TODO: do we need to worry about extra precision?
                                           # because this truncates the decimal portion...
 
 
 
+<<<<<<< HEAD
+def split_cp(payload):
+    return [int(a) for a in payload.split('.')]
+
+def compare_vc(vc, cp):
+    vc = vc.values()
+    print(vc)
+    cp = split_cp(cp)
+    compared_clocks = [((o <= vc[i]), (o < vc[i])) for i, o in enumerate(cp)]
+=======
 def compare_vc(vc_in, cp_in):
     vc_in = vc_in.values()
     normalized_cp = [int(a) for a in cp_in.split('.')]
     print(normalized_cp)
     compared_clocks = [((o <= vc_in[i]), (o < vc_in[i])) for i, o in enumerate(normalized_cp)]
+>>>>>>> aab2e85ed912e034300170e934079480964bfbe5
     print(compared_clocks)
+    # 1 -- cp > vc
+    # 0 -- cp = vc
+    # -1 -- cp < vc
     return compared_clocks
+
+
 
 if __name__ == "__main__":
     K = os.getenv('K', 3)
@@ -183,7 +203,11 @@ if __name__ == "__main__":
         # Strips out PORT field, seems unnecessary as they're all 8080.
         for node in all_nodes:
             node = node.split(':')[0]
+<<<<<<< HEAD
+            # Init vc dictionary
+=======
             # Init current_vc dictionary
+>>>>>>> aab2e85ed912e034300170e934079480964bfbe5
             current_vc[node] = 0
         print(current_vc)
         if len(VIEW) >= K:
