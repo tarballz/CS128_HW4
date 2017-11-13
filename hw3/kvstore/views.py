@@ -6,12 +6,12 @@ import time
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from rest_framework import status
-from kvstore.models import Entry
+from .models import Entry
 import requests as req
 
 
 # Environment variables.
-K          = os.getenv('K', 0)
+K          = os.getenv('K', 3)
 VIEW       = os.getenv('VIEW', "0.0.0.0:8080,10.0.0.20:8080,10.0.0.21:8080,10.0.0.22:8080")
 IPPORT     = os.getenv('IPPORT', "0.0.0.0:8080")
 current_vc = collections.OrderedDict()
@@ -37,16 +37,15 @@ if VIEW != None:
     print(current_vc)
     print(list(current_vc.values()))
     if len(VIEW) >= K:
-        replica_nodes = all_nodes[0:(K + 1)]
-        proxy_nodes   = all_nodes[(K + 1)::]
+        replica_nodes = all_nodes[0:K]
+        proxy_nodes   = all_nodes[K::]
     else:
         degraded_mode = True
         replica_nodes = VIEW
 
 
 def is_replica():
-    #return not os.environ.has_key('MAINIP')
-    return True
+    return (IPPORT in replica_nodes)
 
 # FAILURE RESPONSE -- BAD KEY INPUT
 @api_view(['GET', 'PUT'])
@@ -58,7 +57,7 @@ def get_node_details(request):
     if IPPORT in replica_nodes:
         return Response({"result": "success", "replica": "Yes"}, status=status.HTTP_200_OK)
     elif IPPORT in proxy_nodes:
-        return Response({"result": "success", "replica": "no"}, status=status.HTTP_200_OK)
+        return Response({"result": "success", "replica": "No"}, status=status.HTTP_200_OK)
     else:
         return Response({"result": "error", "msg": "Node not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -82,7 +81,7 @@ def kvs_response(request, key):
 
             # ERROR HANDLING: EMPTY VALUE or TOO LONG VALUE
             if 'val' not in request.data or sys.getsizeof(input_value) > 1024 * 1024 * 256:
-                return Response({'result':'Error','msg':'No value provided'},status=status.HTTP_403_BAD_REQUEST)
+                return Response({'result':'Error','msg':'No value provided'},status=status.HTTP_400_BAD_REQUEST)
 
             # Maybe comment this out b/c causal payload can be '' in case if no reads have happened yet?
             if 'causal_payload' not in request.data:
@@ -93,7 +92,7 @@ def kvs_response(request, key):
             timestamp      = int(time.time())
             # len(causal_payload) == 0 if the user hasn't done ANY reads yet. 
             # TODO: MAKE SEPARATE CASE.
-            # causal_payload > current_vc
+            # if causal_payload > current_vc
             cp_list = causal_payload.split('.')
             if compare_vc(cp_list, list(current_vc.values())) == 1:
                 print ("OLD VC:")
@@ -109,23 +108,31 @@ def kvs_response(request, key):
                                                                                    'causal_payload': causal_payload,
                                                                                    'node_id': node_id,
                                                                                    'timestamp': timestamp})
-                return Response({'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": causal_payload, "timestamp": timestamp}, status=status.HTTP_200_OK)
+                return Response(
+                    {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": causal_payload,
+                     "timestamp": timestamp}, status=status.HTTP_200_OK)
             # Vector clocks are same value, have to compare timestamps.
             elif compare_vc(cp_list, list(current_vc.values())) == 0:
-                incoming_timestamp = request.data['timestamp']
-                if incoming_timestamp > timestamp:
+                existing_entry = Entry.objects.get(key=key)
+                existing_timestamp = existing_entry.timestamp
+                # incoming_timestamp = request.data['timestamp']
+                if existing_timestamp < timestamp:
                     entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
                                                                                        'causal_payload': causal_payload,
                                                                                        'node_id': node_id,
                                                                                        'timestamp': timestamp})
-                    return Response({'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": causal_payload, "timestamp": timestamp}, status=status.HTTP_200_OK)
+                    return Response({'result': 'success', 'value': input_value, 'node_id': node_id,
+                                     'causal_payload': causal_payload, 'timestamp': timestamp},
+                                    status=status.HTTP_200_OK)
                 # Can't go back in time, reject incoming PUT
-                elif incoming_timestamp < timestamp:
-                    return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'}, status=status.HTTP_406_NOT_ACCEPTABLE)
+                elif existing_timestamp > timestamp:
+                    return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                    status=status.HTTP_406_NOT_ACCEPTABLE)
 
             # causal payload < current_vc
             else:
-                return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'}, status=status.HTTP_406_NOT_ACCEPTABLE)
+                return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                status=status.HTTP_406_NOT_ACCEPTABLE)
                 
                 # TODO: Figure out what to do in case incoming_timestamp == timestamp
 
@@ -135,7 +142,10 @@ def kvs_response(request, key):
             try:
                 # KEY EXISTS
                 existing_entry = Entry.objects.get(key=key)
-                return Response({'result':'Success', 'msg': 'Success', 'value': existing_entry.value}, status=status.HTTP_200_OK)
+                return Response(
+                    {'result': 'success', "value": existing_entry.value, "node_id": existing_entry.node_id,
+                     "causal_payload": existing_entry.causal_payload,
+                     "timestamp": existing_entry.timestamp}, status=status.HTTP_200_OK)
             except:
                 # ERROR HANDLING: KEY DOES NOT EXIST
                 return Response({'result':'Error','msg':'Key does not exist'},status=status.HTTP_400_BAD_REQUEST)
