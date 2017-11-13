@@ -69,6 +69,8 @@ def get_all_replicas(request):
 @api_view(['GET', 'PUT'])
 def kvs_response(request, key):
     method = request.method
+    existing_entry     = None
+    existing_timestamp = None
 
     # MAIN RESPONSE
     if is_replica():
@@ -90,7 +92,6 @@ def kvs_response(request, key):
 
             causal_payload = str(request.data['causal_payload'])
             node_id        = list(current_vc.keys()).index(IPPORT)
-            # Only use if incoming_timestamp == 0
             new_timestamp  = int(time.time())
             # len(causal_payload) == 0 if the user hasn't done ANY reads yet. 
             # TODO: MAKE SEPARATE CASE for len(causal_payload) == 0
@@ -111,10 +112,13 @@ def kvs_response(request, key):
                 # Gross-ass way to update current_vc
                 i = 0
                 for k,v in current_vc.items():
-                    current_vc[k] = cp_list[i]
-                    i += 1
+                    if current_vc[k] != None:
+                        current_vc[k] = cp_list[i]
+                        i += 1
                 print ("NEW VC:")
                 print (current_vc)
+                if new_entry:
+                    existing_timestamp = new_timestamp
                 entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
                                                                                    'causal_payload': causal_payload,
                                                                                    'node_id': node_id,
@@ -124,19 +128,18 @@ def kvs_response(request, key):
                      "timestamp": existing_timestamp}, status=status.HTTP_200_OK)
             # Vector clocks are same value, have to compare timestamps.
             elif compare_vc(cp_list, list(current_vc.values())) == 0:
-                # incoming_timestamp = request.data['timestamp']
-                if existing_timestamp < new_timestamp:
-                    entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
-                                                                                       'causal_payload': causal_payload,
-                                                                                       'node_id': node_id,
-                                                                                       'timestamp': timestamp})
-                    return Response({'result': 'success', 'value': input_value, 'node_id': node_id,
-                                     'causal_payload': causal_payload, 'timestamp': timestamp},
-                                    status=status.HTTP_200_OK)
+                # if existing_timestamp < new_timestamp:
+                entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
+                                                                                   'causal_payload': causal_payload,
+                                                                                   'node_id': node_id,
+                                                                                   'timestamp': existing_timestamp})
+                return Response({'result': 'success', 'value': input_value, 'node_id': node_id,
+                                 'causal_payload': causal_payload, 'timestamp': existing_timestamp},
+                                status=status.HTTP_200_OK)
                 # Can't go back in time, reject incoming PUT
-                elif existing_timestamp > timestamp:
-                    return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
-                                    status=status.HTTP_406_NOT_ACCEPTABLE)
+                # elif existing_timestamp > timestamp:
+                    #return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                    #status=status.HTTP_406_NOT_ACCEPTABLE)
 
             # causal payload < current_vc
             else:
@@ -159,14 +162,6 @@ def kvs_response(request, key):
                 # ERROR HANDLING: KEY DOES NOT EXIST
                 return Response({'result':'Error','msg':'Key does not exist'},status=status.HTTP_400_BAD_REQUEST)
 
-        # MAIN DEL
-        elif method == 'DELETE':
-            try:
-                Entry.objects.get(key=key).delete()
-                return Response({'result': 'Success'}, status=status.HTTP_200_OK)
-            except Entry.DoesNotExist:
-                # ERROR HANDLING: KEY DOES NOT EXIST
-                return Response({'result':'Error','msg':'Key does not exist'}, status=status.HTTP_404_NOT_FOUND)
     # PROXY RESPONSE
     else:
 
@@ -188,21 +183,60 @@ def kvs_response(request, key):
                 response = Response(res.json())
                 response.status_code = res.status_code
             except Exception:
-                return Response({'result': 'Error', 'msg': 'Server unavailable'}, status=501)
-    # 	# MODIFY URL STRING WITH DEL INPUT AND FORWARD DEL REQUEST
-    # 		# PACKAGE AND RETURN RESPONSE TO CLIENT
-        elif method == 'DELETE':
-            # Key exists
-            if req.get(url_str).status_code == 200:
-                res = req.delete(url_str)
-                response = Response({'result': 'Success'}, status=status.HTTP_200_OK)
-            # Key doesn't exist
-            elif req.get(url_str).status_code == 404:
-                return Response({'msg': 'Error', 'error': 'Key does not exist'}, status=status.HTTP_404_NOT_FOUND)
-            # 'Everything else', 500 errors etc.
-            else:
-                return Response(req.delete(url_str).json())
+                return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
+
         return response
+
+# CORRECT KEYS
+@api_view(['PUT'])
+def update_view(request):
+    new_ipport = request.data['ip_port']
+
+    if request.GET.get('type', '') == 'add':
+        # Added node should be a replica.
+        all_nodes.append(new_ipport)
+        if len(all_nodes) <= K:
+            replica_nodes.append(new_ipport)
+            # Check if we're resurrecting a node that was previously in our OrderedDict current_vc
+            if new_ipport not in current_vc:
+                # Init new entry into our dictionary.
+                current_vc.update({new_ipport: 0})
+            else:
+                current_vc[new_ipport] = 0
+        elif len(all_nodes) > K:
+            proxy_nodes.append(new_ipport)
+            degraded_mode = False
+
+        return Response(
+            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport), "number_of_nodes": len(all_nodes)})
+
+    elif request.GET.get('type', '') == 'remove':
+        all_nodes.remove(new_ipport)
+        if new_ipport in replica_nodes:
+            replica_nodes.remove(new_ipport)
+            # Instead of deleting the node from the OrderedDict, we will just set it's value to None to indicate
+            # that it's been removed, but this way we're still able to preserve accurate node_id's.
+            current_vc[new_ipport] = None
+            if len(replica_nodes) <= K:
+                # If we have any "spare" nodes in proxy_nodes, promote it to a replica.
+                if len(proxy_nodes) > 0:
+                    promoted = proxy_nodes.pop()
+                    replica_nodes.append(promoted)
+                    current_vc[promoted] = 0
+
+                    if len(replica_nodes) > K:
+                        degraded_mode = False
+                else:
+                    degraded_mode = True
+
+        elif IPPORT in proxy_nodes:
+            proxy_nodes.remove(IPPORT)
+
+
+    else:
+        return Response({'result': 'error', 'msg': 'key value store is not available'}, status=status.HTTP_501_NOT_IMPLEMENTED)
+
+
 
 def compare_vc(a, b):
     """
