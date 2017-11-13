@@ -1,4 +1,4 @@
-# Runs a docker image with tag "hw3"
+# Runs a docker image with tag "hw2"
 docker build -t hw3 .
 
 # Runs the docker image, and forwards our port 8080 to
@@ -30,4 +30,17 @@ curl 'localhost:8080/kvs/abc' -d 'val=123' -X PUT
 
 ##################### HW3 ############################
 
-docker run -p 8081:8080 --ip=10.0.0.21 --net=mynet -e K=3 -e VIEW="10.0.0.21:8080,10.0.0.22:8080,10.0.0.23:8080,10.0.0.24:8080" -e IPPORT="10.0.0.21:8080" hw3:latest
+Running django for the first time:
+    - From same directory as Pipfile: 
+        pipenv --python /usr/bin/python3
+            - This will tell pipenv to use this specific version of python.
+        pipenv install
+            - This will install all the requirements for Django 
+
+Then you're good to launch.
+pipenv shell 
+    - This will launch you into the virtual environment
+
+cd to where manage.py is and run 
+./manage.py runserver
+    - This is just for running locally.
