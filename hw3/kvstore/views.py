@@ -74,6 +74,7 @@ def kvs_response(request, key):
     if is_replica():
         # MAIN PUT
         if method == 'PUT':
+            new_entry = False
             # ERROR HANDLING: INVALID KEY TYPE (NONE)
             if 'val' not in request.data:
                 return Response({'result':'Error','msg':'No value provided'},status=status.HTTP_400_BAD_REQUEST)
@@ -89,11 +90,21 @@ def kvs_response(request, key):
 
             causal_payload = str(request.data['causal_payload'])
             node_id        = list(current_vc.keys()).index(IPPORT)
-            timestamp      = int(time.time())
+            # Only use if incoming_timestamp == 0
+            new_timestamp  = int(time.time())
             # len(causal_payload) == 0 if the user hasn't done ANY reads yet. 
-            # TODO: MAKE SEPARATE CASE.
-            # if causal_payload > current_vc
+            # TODO: MAKE SEPARATE CASE for len(causal_payload) == 0
+
             cp_list = causal_payload.split('.')
+            # Need to do a GET to either compare values or confirm this entry is being
+            # entered for the first time.
+            try:
+                existing_entry = Entry.objects.get(key=key)
+                existing_timestamp = existing_entry.timestamp
+            except:
+                new_entry = True
+
+            # if causal_payload > current_vc
             if compare_vc(cp_list, list(current_vc.values())) == 1:
                 print ("OLD VC:")
                 print (current_vc)
@@ -104,19 +115,17 @@ def kvs_response(request, key):
                     i += 1
                 print ("NEW VC:")
                 print (current_vc)
-                entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value, 
+                entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
                                                                                    'causal_payload': causal_payload,
                                                                                    'node_id': node_id,
-                                                                                   'timestamp': timestamp})
+                                                                                   'timestamp': existing_timestamp})
                 return Response(
                     {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": causal_payload,
-                     "timestamp": timestamp}, status=status.HTTP_200_OK)
+                     "timestamp": existing_timestamp}, status=status.HTTP_200_OK)
             # Vector clocks are same value, have to compare timestamps.
             elif compare_vc(cp_list, list(current_vc.values())) == 0:
-                existing_entry = Entry.objects.get(key=key)
-                existing_timestamp = existing_entry.timestamp
                 # incoming_timestamp = request.data['timestamp']
-                if existing_timestamp < timestamp:
+                if existing_timestamp < new_timestamp:
                     entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
                                                                                        'causal_payload': causal_payload,
                                                                                        'node_id': node_id,
@@ -133,7 +142,7 @@ def kvs_response(request, key):
             else:
                 return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
                                 status=status.HTTP_406_NOT_ACCEPTABLE)
-                
+
                 # TODO: Figure out what to do in case incoming_timestamp == timestamp
 
 
