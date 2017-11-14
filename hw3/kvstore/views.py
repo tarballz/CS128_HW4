@@ -11,7 +11,7 @@ import requests as req
 
 
 # Environment variables.
-K          = os.getenv('K', 3)
+K          = int(os.getenv('K', 3))
 VIEW       = os.getenv('VIEW', "0.0.0.0:8080,10.0.0.20:8080,10.0.0.21:8080,10.0.0.22:8080")
 IPPORT     = os.getenv('IPPORT', "0.0.0.0:8080")
 current_vc = collections.OrderedDict()
@@ -36,7 +36,7 @@ if VIEW != None:
         current_vc[node] = 0
     print(current_vc)
     print(list(current_vc.values()))
-    if len(VIEW) >= K:
+    if len(VIEW) > K:
         replica_nodes = all_nodes[0:K]
         proxy_nodes   = all_nodes[K::]
     else:
@@ -93,7 +93,8 @@ def kvs_response(request, key):
             causal_payload = str(request.data['causal_payload'])
             node_id        = list(current_vc.keys()).index(IPPORT)
             new_timestamp  = int(time.time())
-            # len(causal_payload) == 0 if the user hasn't done ANY reads yet. 
+
+            # len(causal_payload) == 0 if the user hasn't done ANY reads yet.
             # TODO: MAKE SEPARATE CASE for len(causal_payload) == 0
 
             cp_list = causal_payload.split('.')
@@ -117,15 +118,13 @@ def kvs_response(request, key):
                         i += 1
                 print ("NEW VC:")
                 print (current_vc)
-                if new_entry:
-                    existing_timestamp = new_timestamp
                 entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
                                                                                    'causal_payload': causal_payload,
                                                                                    'node_id': node_id,
-                                                                                   'timestamp': existing_timestamp})
+                                                                                   'timestamp': new_timestamp})
                 return Response(
                     {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": causal_payload,
-                     "timestamp": existing_timestamp}, status=status.HTTP_200_OK)
+                     "timestamp": new_timestamp}, status=status.HTTP_200_OK)
 
             # causal payload < current_vc
             else:
@@ -148,17 +147,26 @@ def kvs_response(request, key):
                 # ERROR HANDLING: KEY DOES NOT EXIST
                 return Response({'result':'Error','msg':'Key does not exist'},status=status.HTTP_400_BAD_REQUEST)
 
+
+
+
     # PROXY RESPONSE
     else:
 
     # 	# GENERATE BASE URL STRING
-        url_str = 'http://'+os.environ['MAINIP']+'/kv-store/'+key
+    #     url_str = 'http://'+os.environ['MAINIP']+'/kv-store/'+key
+        # TODO: Implement some form of gossip or laziest_node() is useless.
+        dest_node = laziest_node(current_vc)
+        print("SELECTED ", dest_node, " TO FORWARD TO.")
+
+        # Some letters get chopped off when I forward, so I added str() to key.  Haven't test if it works yet tho.
+        url_str = 'http://' + dest_node + '/kv-store/' + str(key)
 
 
     # 	# FORWARD GET REQUEST
     # 		# PACKAGE AND RETURN RESPONSE TO CLIENT
         if method == 'GET':
-            res = req.get(url_str)
+            res = req.get(url=url_str, timeout=3)
             response = Response(res.json())
             response.status_code = res.status_code
     # 	# MODIFY URL STRING WITH PUT INPUT AND FORWARD PUT REQUEST
@@ -173,7 +181,6 @@ def kvs_response(request, key):
 
         return response
 
-# CORRECT KEYS
 @api_view(['PUT'])
 def update_view(request):
     new_ipport = request.data['ip_port']
@@ -238,3 +245,6 @@ def compare_vc(a, b):
         if gt and lt:
             break
     return int(gt) - int(lt)
+
+def laziest_node(r_nodes):
+    return min(r_nodes.items(), key=lambda x: x[1])[0]
