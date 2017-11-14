@@ -252,3 +252,22 @@ def compare_vc(a, b):
         if gt and lt:
             break
     return int(gt) - int(lt)
+
+
+def find_min()
+    """"
+    Find the minimum value of the vector clock,
+    returns the IP of the node with the least work,
+    used for forwarding
+    """
+
+    min = sys.maxsize
+    for k, v in current_vc.items():
+        if min > current_vc[k]:
+            min = v
+            key = k
+    return key
+
+
+
+
