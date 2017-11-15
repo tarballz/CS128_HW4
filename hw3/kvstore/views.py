@@ -87,7 +87,6 @@ def kvs_response(request, key):
             # ERROR HANDLING: EMPTY VALUE or TOO LONG VALUE
             if 'val' not in request.data or sys.getsizeof(input_value) > 1024 * 1024 * 256:
                 return Response({'result':'Error','msg':'No value provided'},status=status.HTTP_400_BAD_REQUEST)
-                status.Htt
             # Maybe comment this out b/c causal payload can be '' in case if no reads have happened yet?
             if 'causal_payload' not in request.data:
                 return Response({'result': 'Error', 'msg': 'No causal_payload provided'}, status=status.HTTP_400_BAD_REQUEST)
@@ -265,6 +264,7 @@ def find_min():
 
 def laziest_node(r_nodes):
     return min(r_nodes.items(), key=lambda x: x[1])[0]
+
 
 def check_nodes():
     return Response(status=status.HTTP_200_OK)

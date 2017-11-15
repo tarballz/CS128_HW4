@@ -13,3 +13,5 @@ class Entry(models.Model):
 	def create_entry(cls, key, value, causal_payload, node_id, timestamp):
 		entry = cls(key, value, causal_payload, node_id, timestamp)
 		return entry
+
+
