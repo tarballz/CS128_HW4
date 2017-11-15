@@ -15,6 +15,7 @@ K          = os.getenv('K', 3)
 VIEW       = os.getenv('VIEW', "0.0.0.0:8080,10.0.0.20:8080,10.0.0.21:8080,10.0.0.22:8080")
 IPPORT     = os.getenv('IPPORT', "0.0.0.0:8080")
 current_vc = collections.OrderedDict()
+AVAILIP    = {}
 
 all_nodes     = []
 replica_nodes = []
@@ -34,6 +35,7 @@ if VIEW != None:
     for node in all_nodes:
         #node = node.split(':')[0]
         current_vc[node] = 0
+        AVAILIP          = False
     print(current_vc)
     print(list(current_vc.values()))
     if len(VIEW) >= K:
