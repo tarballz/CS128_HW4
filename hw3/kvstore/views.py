@@ -8,7 +8,7 @@ from rest_framework.decorators import api_view
 from rest_framework import status
 from .models import Entry
 import requests as req
-
+import threading
 
 # Environment variables.
 K          = int(os.getenv('K', 3))
@@ -45,6 +45,39 @@ if VIEW != None:
         degraded_mode = True
         replica_nodes = VIEW
 
+def gossip():
+    threading.Timer(3.0, gossip).start()
+    existing_entry = None
+    for node in replica_nodes:
+        if IPPORT != node:
+            try:
+                existing_entry = Entry.objects.latest('timestamp')
+                url_s = 'http://' + node + '/kv-store/get_gossip/' + str(existing_entry.key)
+                res = req.put(url=url_s, data={'value': existing_entry.value,
+                                               'causal_payload': existing_entry.causal_payload,
+                                               'node_id': existing_entry.node_id,
+                                               'timestamp': existing_entry.timestamp})
+            except:
+                continue
+            if res.status_code == 200:
+                print("success")
+# Run our gossip protocol.
+gossip()
+
+@api_view(['PUT'])
+def get_gossip(request, key):
+    incoming_cp = str(request.data['causal_payload']).split('.')
+
+    try:
+        local_newest_entry = Entry.object.latest('timestamp')
+    except:
+        local_newest_entry = None
+    if local_newest_entry != None:
+        local_cp = str(local_newest_entry.causal_payload).split('.')
+        # if incoming_cp > local_cp
+        if compare_vc(incoming_cp, local_cp) == 1:
+            # placeholder
+            pass
 
 def is_replica():
     return (IPPORT in replica_nodes)
@@ -101,12 +134,16 @@ def kvs_response(request, key):
             cp_list = causal_payload.split('.')
             # Need to do a GET to either compare values or confirm this entry is being
             # entered for the first time.
+            existing_entry = None
             try:
-                existing_entry = Entry.objects.get(key=key)
+                # existing_entry = Entry.objects.get(key=key)
+                existing_entry = Entry.objects.latest('timestamp')
+                existing_cp = existing_entry.causal_payload
                 existing_timestamp = existing_entry.timestamp
             except:
                 new_entry = True
 
+            print("EXISTING ENTRY: ", existing_entry)
             # if causal_payload > current_vc
             if compare_vc(cp_list, list(current_vc.values())) > -1:
                 print ("OLD VC:")
@@ -119,6 +156,7 @@ def kvs_response(request, key):
                         i += 1
                 print ("NEW VC:")
                 print (current_vc)
+
                 entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
                                                                                    'causal_payload': causal_payload,
                                                                                    'node_id': node_id,
@@ -181,6 +219,7 @@ def kvs_response(request, key):
                 return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
 
         return response
+
 
 @api_view(['PUT'])
 def update_view(request):
