@@ -268,6 +268,5 @@ def find_min()
             key = k
     return key
 
-
-
-
+def check_nodes():
+    return Response(status=status.HTTP_200_OK)

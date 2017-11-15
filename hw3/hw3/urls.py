@@ -9,4 +9,5 @@ urlpatterns = [
     url(r'^kv-store/update_view', views.update_view),
     url(r'^kv-store/(?P<key>[a-zA-Z0-9_]){1,200}$', views.kvs_response),
     url(r'^kv-store/(?P<key>[a-zA-Z0-9_]){201,}$', views.failure),
+    url(r'^kv-store/check_nodes', views.check_nodes),
 ]
