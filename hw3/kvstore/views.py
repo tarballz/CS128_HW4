@@ -36,7 +36,7 @@ if VIEW != None:
         #node = node.split(':')[0]
         current_vc[node] = 0
         AVAILIP          = False
-    print(current_vc)
+    print("%s local vc: %s" % (IPPORT, current_vc))
     print(list(current_vc.values()))
     if len(VIEW) > K:
         replica_nodes = all_nodes[0:K]
@@ -50,6 +50,7 @@ def gossip():
     existing_entry = None
     for node in replica_nodes:
         if IPPORT != node:
+            print("Pinging: %s" % (IPPORT))
             try:
                 existing_entry = Entry.objects.latest('timestamp')
                 url_s = 'http://' + node + '/kv-store/get_gossip/' + str(existing_entry.key)
@@ -76,8 +77,8 @@ def get_gossip(request, key):
         local_cp = str(local_newest_entry.causal_payload).split('.')
         # if incoming_cp > local_cp
         if compare_vc(incoming_cp, local_cp) == 1:
-            # placeholder
             pass
+
 
 def is_replica():
     return (IPPORT in replica_nodes)
@@ -146,16 +147,14 @@ def kvs_response(request, key):
             print("EXISTING ENTRY: ", existing_entry)
             # if causal_payload > current_vc
             if compare_vc(cp_list, list(current_vc.values())) > -1:
-                print ("OLD VC:")
-                print (current_vc)
+                print ("OLD VC: %s" % (current_vc))
                 # Gross-ass way to update current_vc
                 i = 0
                 for k,v in current_vc.items():
                     if current_vc[k] != None:
                         current_vc[k] = cp_list[i]
                         i += 1
-                print ("NEW VC:")
-                print (current_vc)
+                print ("NEW VC: %s" % (current_vc))
 
                 entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
                                                                                    'causal_payload': causal_payload,
