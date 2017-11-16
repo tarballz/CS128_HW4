@@ -4,7 +4,7 @@ from threading import Thread, Event, Timer
 
 class Entry(models.Model):
     key   = models.CharField(max_length=200)
-    value = models.TextField()
+    val = models.TextField()
     causal_payload = models.TextField()
     node_id = models.IntegerField()
     timestamp = models.PositiveIntegerField()
@@ -16,7 +16,7 @@ class Entry(models.Model):
         return entry
 
     def __str__(self):
-        return "Key: %s Val: %s CP: %s NID: %s TS: %s" % (self.key, self.value, self.causal_payload, str(self.node_id), str(self.timestamp))
+        return "Key: %s Val: %s CP: %s NID: %s TS: %s" % (self.key, self.val, self.causal_payload, str(self.node_id), str(self.timestamp))
 
 """ Probably don't need this class. """
 class BThread(models.Model, Thread):

@@ -54,7 +54,7 @@ def gossip():
             try:
                 existing_entry = Entry.objects.latest('timestamp')
                 url_s = 'http://' + node + '/kv-store/get_gossip/' + str(existing_entry.key)
-                res = req.put(url=url_s, data={'value': existing_entry.value,
+                res = req.put(url=url_s, data={'val': existing_entry.val,
                                                'causal_payload': existing_entry.causal_payload,
                                                'node_id': existing_entry.node_id,
                                                'timestamp': existing_entry.timestamp})
@@ -63,14 +63,14 @@ def gossip():
             if res.status_code == 200:
                 print("success")
 # Run our gossip protocol.
-gossip()
+#gossip()
 
 @api_view(['PUT'])
 def get_gossip(request, key):
     incoming_cp = str(request.data['causal_payload']).split('.')
 
     try:
-        local_newest_entry = Entry.object.latest('timestamp')
+        local_newest_entry = Entry.objects.latest('timestamp')
     except:
         local_newest_entry = None
     if local_newest_entry != None:
@@ -125,51 +125,114 @@ def kvs_response(request, key):
             if 'causal_payload' not in request.data:
                 return Response({'result': 'Error', 'msg': 'No causal_payload provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-            causal_payload = str(request.data['causal_payload'])
-            node_id        = list(current_vc.keys()).index(IPPORT)
-            new_timestamp  = int(time.time())
+            # IF DATA HAS NODE_ID, THEN WE'VE RECEIVED NODE-TO-NODE COMMUNICATION
+            # AND NEED TO STORE IT.
+            if 'timestamp' in request.data:
+                # BUILD INCOMING OBJECT.
+                try:
+                    incoming_key       = str(request.data['key'])
+                    incoming_value     = str(request.data['val'])
+                    incoming_cp        = str(request.data['causal_payload'])
+                    incoming_node_id   = request.data['node_id']
+                    incoming_timestamp = request.data['timestamp']
+                except:
+                    return Response({'result': 'Error', 'msg': 'Cannot construct node-to-node entry'},
+                                    status=status.HTTP_400_BAD_REQUEST)
 
-            # len(causal_payload) == 0 if the user hasn't done ANY reads yet.
-            # TODO: MAKE SEPARATE CASE for len(causal_payload) == 0
+                cp_list = incoming_cp.split('.')
+                # IF INCOMING_CP > CURRENT_VC
+                if compare_vc(cp_list, list(current_vc.values())) == 1:
+                    update_current_vc(incoming_cp)
+                    entry, created = Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                                      'causal_payload': incoming_cp,
+                                                                                      'node_id': incoming_node_id,
+                                                                                      'timestamp': incoming_timestamp})
+                    return Response(
+                        {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
+                         "causal_payload": incoming_cp,
+                         "timestamp": incoming_timestamp}, status=status.HTTP_200_OK)
 
-            cp_list = causal_payload.split('.')
-            # Need to do a GET to either compare values or confirm this entry is being
-            # entered for the first time.
-            existing_entry = None
-            try:
-                # existing_entry = Entry.objects.get(key=key)
-                existing_entry = Entry.objects.latest('timestamp')
-                existing_cp = existing_entry.causal_payload
-                existing_timestamp = existing_entry.timestamp
-            except:
-                new_entry = True
+                elif compare_vc(cp_list, list(current_vc.values())) == 0:
+                    new_entry = False
+                    try:
+                        existing_entry = Entry.objects.get(key=key)
+                    except:
+                        new_entry = True
+                    if new_entry:
+                        # FAILURE: KEY DOES NOT EXIST
+                        # CREATE ENTRY IN OUR DB SINCE THE ENTRY DOESN'T EXIST.
+                        Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                         'causal_payload': incoming_cp,
+                                                                         'node_id': incoming_node_id,
+                                                                         'timestamp': incoming_timestamp})
+                        return Response({'result': 'Success', 'msg': 'Key does not exist'},
+                                        status=status.HTTP_201_CREATED)
+                    # IF WE'VE GOTTEN HERE, KEY EXISTS
+                    else:
+                        if incoming_timestamp > existing_entry.timestamp:
+                            Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                             'causal_payload': incoming_cp,
+                                                                             'node_id': incoming_node_id,
+                                                                             'timestamp': incoming_timestamp})
+                            return Response(
+                                {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
+                                 "causal_payload": incoming_cp,
+                                 "timestamp": incoming_timestamp}, status=status.HTTP_200_OK)
+                        else:
+                            return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                            status=status.HTTP_406_NOT_ACCEPTABLE)
 
-            print("EXISTING ENTRY: ", existing_entry)
-            # if causal_payload > current_vc
-            if compare_vc(cp_list, list(current_vc.values())) > -1:
-                print ("OLD VC: %s" % (current_vc))
-                # Gross-ass way to update current_vc
-                i = 0
-                for k,v in current_vc.items():
-                    if current_vc[k] != None:
-                        current_vc[k] = cp_list[i]
-                        i += 1
-                print ("NEW VC: %s" % (current_vc))
+                # IF INCOMONG_CP < CURRENT_VC
+                #elif compare_vc(cp_list, list(current_vc.values())) == -1:
+                else:
+                    return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                    status=status.HTTP_406_NOT_ACCEPTABLE)
 
-                entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
-                                                                                   'causal_payload': causal_payload,
-                                                                                   'node_id': node_id,
-                                                                                   'timestamp': new_timestamp})
-                return Response(
-                    {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": causal_payload,
-                     "timestamp": new_timestamp}, status=status.HTTP_200_OK)
 
-            # causal payload < current_vc
+            # IF NO TIMESTAMP, WE KNOW THIS PUT IS FROM THE CLIENT.
             else:
-                return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
-                                status=status.HTTP_406_NOT_ACCEPTABLE)
+                incoming_cp     = str(request.data['causal_payload'])
+                node_id         = list(current_vc.keys()).index(IPPORT)
+                new_timestamp   = int(time.time())
+                const_timestamp = new_timestamp # new_timestamp keeps updating :((
 
-                # TODO: Figure out what to do in case incoming_timestamp == timestamp
+                # len(causal_payload) == 0 if the user hasn't done ANY reads yet.
+                # TODO: MAKE SEPARATE CASE for len(causal_payload) == 0
+
+                cp_list = incoming_cp.split('.')
+                # Need to do a GET to either compare values or confirm this entry is being
+                # entered for the first time.
+                existing_entry = None
+                try:
+                    existing_entry = Entry.objects.get(key=key)
+                    #existing_entry = Entry.objects.latest('timestamp')
+                    existing_timestamp = existing_entry.timestamp
+                except:
+                    new_entry = True
+
+                print("EXISTING ENTRY: ", existing_entry)
+
+                broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
+
+                # if causal_payload > current_vc
+                # I SET THIS TO BE "> -1" B/C IT DOES NOT MATTER IF VCS ARE THE SAME B/C CLIENT WILL NOT PASS A TIMESTAMP
+                if compare_vc(cp_list, list(current_vc.values())) > -1:
+                    # print ("OLD VC: %s" % (current_vc))
+                    update_current_vc(cp_list)
+
+                    entry, created = Entry.objects.update_or_create(key=key, defaults={'val': input_value,
+                                                                                       'causal_payload': incoming_cp,
+                                                                                       'node_id': node_id,
+                                                                                       'timestamp': const_timestamp})
+                    return Response(
+                        {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
+                         "timestamp": const_timestamp}, status=status.HTTP_200_OK)
+
+
+                # causal payload < current_vc
+                else:
+                    return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                    status=status.HTTP_406_NOT_ACCEPTABLE)
 
 
         # MAIN GET
@@ -177,10 +240,7 @@ def kvs_response(request, key):
             try:
                 # KEY EXISTS
                 existing_entry = Entry.objects.get(key=key)
-                return Response(
-                    {'result': 'success', "value": existing_entry.value, "node_id": existing_entry.node_id,
-                     "causal_payload": existing_entry.causal_payload,
-                     "timestamp": existing_entry.timestamp}, status=status.HTTP_200_OK)
+                return Response({'result': 'success', "value": existing_entry.val, "node_id": existing_entry.node_id,"causal_payload": existing_entry.causal_payload,"timestamp": existing_entry.timestamp}, status=status.HTTP_200_OK)
             except:
                 # ERROR HANDLING: KEY DOES NOT EXIST
                 return Response({'result':'Error','msg':'Key does not exist'},status=status.HTTP_400_BAD_REQUEST)
@@ -197,8 +257,8 @@ def kvs_response(request, key):
         dest_node = laziest_node(current_vc)
         print("SELECTED ", dest_node, " TO FORWARD TO.")
 
-        # Some letters get chopped off when I forward, so I added str() to key.  Haven't test if it works yet tho.
-        url_str = 'http://' + dest_node + '/kv-store/' + str(key)
+        # Some letters get chopped off when I forward.  Only retaining last letter..?
+        url_str = 'http://' + dest_node + '/kv-store/' + key
 
 
     # 	# FORWARD GET REQUEST
@@ -218,6 +278,29 @@ def kvs_response(request, key):
                 return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
 
         return response
+
+
+def broadcast(key, value, cp, node_id, timestamp):
+    for dest_node in replica_nodes:
+        if dest_node != IPPORT:
+            url_str = 'http://' + dest_node + '/kv-store/' + key
+            res = req.put(url=url_str, data={'key': key,
+                                             'val': value,
+                                             'causal_payload': cp,
+                                             'node_id': node_id,
+                                             'timestamp': timestamp})
+            #response = Response(res.json())
+            #response.status_code = res.status_code
+            #return response
+
+# Gross-ass way to update current_vc
+def update_current_vc(new_cp):
+    i = 0
+    for k, v in current_vc.items():
+        if current_vc[k] != None:
+            current_vc[k] = new_cp[i]
+            i += 1
+    print("NEW VC: %s" % (current_vc))
 
 
 @api_view(['PUT'])
