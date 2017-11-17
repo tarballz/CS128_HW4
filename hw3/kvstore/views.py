@@ -8,6 +8,8 @@ from rest_framework.decorators import api_view
 from rest_framework import status
 from .models import Entry
 import requests as req
+import _thread
+from NodeTracker import NodeTracker
 
 
 # Environment variables.
@@ -35,7 +37,7 @@ if VIEW != None:
     for node in all_nodes:
         #node = node.split(':')[0]
         current_vc[node] = 0
-        AVAILIP          = False
+        AVAILIP[node]          = False
     print(current_vc)
     print(list(current_vc.values()))
     if len(VIEW) >= K:
@@ -48,6 +50,10 @@ if VIEW != None:
 
 def is_replica():
     return (IPPORT in replica_nodes)
+
+
+try:
+    _thread.start_new_thread(NodeTracker.run, AVAILIP)
 
 # FAILURE RESPONSE -- BAD KEY INPUT
 @api_view(['GET', 'PUT'])
@@ -239,6 +245,8 @@ def update_view(request):
         return Response({'result': 'error', 'msg': 'key value store is not available'}, status=status.HTTP_501_NOT_IMPLEMENTED)
 
 
+try:
+
 
 def compare_vc(a, b):
     """
@@ -256,7 +264,7 @@ def compare_vc(a, b):
     return int(gt) - int(lt)
 
 
-def find_min()
+def find_min():
     """"
     Find the minimum value of the vector clock,
     returns the IP of the node with the least work,
@@ -271,4 +279,5 @@ def find_min()
     return key
 
 def check_nodes():
+    # new_ipport = request.data['ip_port']
     return Response(status=status.HTTP_200_OK)
