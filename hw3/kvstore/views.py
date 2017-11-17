@@ -12,7 +12,7 @@ import threading
 
 # SET DEBUG TO True  IF YOU'RE WORKING LOCALLY
 # SET DEBUG TO False IF YOU'RE WORKING THROUGH DOCKER
-DEBUG = True
+DEBUG = False
 
 # Environment variables.
 K          = int(os.getenv('K', 3))
@@ -145,6 +145,16 @@ def kvs_response(request, key):
                     return Response({'result': 'Error', 'msg': 'Cannot construct node-to-node entry'},
                                     status=status.HTTP_400_BAD_REQUEST)
 
+                if len(incoming_cp) <= 2:
+                    incoming_cp = ''
+                    print("init triggered")
+                    # Initialize vector clock.
+                    for k,v in current_vc.items():
+                        if v is not None:
+                            incoming_cp += str(v) + '.'
+                    # STRIP LAST LETTER FROM INCOMING CP
+                    incoming_cp = incoming_cp[:-1]
+
                 cp_list = incoming_cp.split('.')
                 print("current_vc.values(): %s" % (list(current_vc.values())))
                 # IF INCOMING_CP > CURRENT_VC
@@ -207,14 +217,15 @@ def kvs_response(request, key):
 
                 # len(causal_payload) == 0 if the user hasn't done ANY reads yet.
                 if len(incoming_cp) <= 2:
+                    incoming_cp = ''
                     print("init triggered")
                     # Initialize vector clock.
-                    incoming_cp = '0'
                     for k,v in current_vc.items():
-                        current_vc[k] = 0
-                    for i in range(0, K):
-                        incoming_cp += '.0'
-                    # incoming_cp += '0'
+                        if v is not None:
+                            incoming_cp += str(v) + '.'
+                    # STRIP LAST LETTER FROM INCOMING CP
+                    incoming_cp = incoming_cp[:-1]
+
                     print("zero icp: %s" % (incoming_cp))
 
                     if not DEBUG:
@@ -381,8 +392,6 @@ def update_view(request):
     else:
         return Response({'result': 'error', 'msg': 'key value store is not available'}, status=status.HTTP_501_NOT_IMPLEMENTED)
 
-
-
 def compare_vc(a, b):
     """
     Compares two vector clocks, returns -1 if ``a < b``,
@@ -392,6 +401,8 @@ def compare_vc(a, b):
     gt = False
     lt = False
     for j, k in zip(a, b):
+        if j == '.' or k == '.':
+            return 1
         gt |= int(j) > int(k)
         lt |= int(j) < int(k)
         if gt and lt:
