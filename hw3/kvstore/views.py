@@ -10,6 +10,10 @@ from .models import Entry
 import requests as req
 import threading
 
+# SET DEBUG TO True  IF YOU'RE WORKING LOCALLY
+# SET DEBUG TO False IF YOU'RE WORKING THROUGH DOCKER
+DEBUG = True
+
 # Environment variables.
 K          = int(os.getenv('K', 3))
 VIEW       = os.getenv('VIEW', "0.0.0.0:8080,10.0.0.20:8080,10.0.0.21:8080,10.0.0.22:8080")
@@ -26,12 +30,14 @@ degraded_mode = False
 #     IP = IPPORT.split(':')[0]
 
 if VIEW != None:
-    # This is just for testing locally.
-    if VIEW != "0.0.0.0:8080":
+    if DEBUG:
+        # This is just for testing locally.
+        if VIEW != "0.0.0.0:8080":
+            all_nodes = VIEW.split(',')
+        else:
+            all_nodes = [VIEW]
+    if not DEBUG:
         all_nodes = VIEW.split(',')
-    else:
-        all_nodes = [VIEW]
-    # Strip out PORT field.
     for node in all_nodes:
         #node = node.split(':')[0]
         current_vc[node] = 0
@@ -140,6 +146,7 @@ def kvs_response(request, key):
                                     status=status.HTTP_400_BAD_REQUEST)
 
                 cp_list = incoming_cp.split('.')
+                print("current_vc.values(): %s" % (list(current_vc.values())))
                 # IF INCOMING_CP > CURRENT_VC
                 if compare_vc(cp_list, list(current_vc.values())) == 1:
                     update_current_vc(incoming_cp)
@@ -199,7 +206,6 @@ def kvs_response(request, key):
                 print(len(incoming_cp))
 
                 # len(causal_payload) == 0 if the user hasn't done ANY reads yet.
-                # TODO: MAKE SEPARATE CASE for len(causal_payload) == 0
                 if len(incoming_cp) <= 2:
                     print("init triggered")
                     # Initialize vector clock.
@@ -210,6 +216,10 @@ def kvs_response(request, key):
                         incoming_cp += '.0'
                     # incoming_cp += '0'
                     print("zero icp: %s" % (incoming_cp))
+
+                    if not DEBUG:
+                        broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
+
                     Entry.objects.update_or_create(key=key, defaults={'val': input_value,
                                                                       'causal_payload': incoming_cp,
                                                                       'node_id': node_id,
@@ -231,7 +241,8 @@ def kvs_response(request, key):
 
                 print("EXISTING ENTRY: ", existing_entry)
 
-                # broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
+                if not DEBUG:
+                    broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
 
                 # if causal_payload > current_vc
                 # I SET THIS TO BE "> -1" B/C IT DOES NOT MATTER IF VCS ARE THE SAME B/C CLIENT WILL NOT PASS A TIMESTAMP
