@@ -6,19 +6,19 @@ from rest_framework import status
 
 class NodeTracker(Thread):
 
-    def __init__(self, IPPORT,  AVAILIP):
+    def __init__(self, IPPORT,  AVAILIP, event):
         self.avail_ip = AVAILIP
         self.ip_port = IPPORT
         #Thread.__init__(self)
-        #self.stopped = event
+        self.stopped = event
 
     # DOESN'T RETURN         = DO NOTHING
     # RETURN TYPE DICTIONARY = UPDATE views.AVAIL_IP with run's OUTPUT
     # RETURN STRING_LIST     = RETURNS STRING_LIST [PROXY_IP , REPLICA_DOWN_IP]
     # RETURN STRING          = RETURNS STRING "REPLICA_IP" WHICH WE NEED TO DIRECT TO MERGING DATA
     # RETURN STRING          = RETURNS STRING 'degraded", BECAUSE WE DON'T HAVE AVAILABLE PROXIES
-    def run(self, replica_nodes):
-        while True:
+    def run(self, replica_nodes,):
+        while not self.stopped():
             for k, v in self.avail_ip:
                 try:
                     url_str = 'http://' + k + '/kv-store/check_nodes'
@@ -35,11 +35,23 @@ class NodeTracker(Thread):
                         # IF IT WAS A PROXY THEN WE ARE COOL, REMOVE FROM AVAIL_IP
                         if k not in replica_nodes:
                             self.avail_ip[k] = False
-                            return self.avail_ip
+                            req_str = 'http://' + self.ip_port + '/kv-store/update_AVAILIP'
+                            res = req.put(req_str,
+                                          json=self.avail_ip
+                                          headers={'content-type': 'application/json'},
+                                          timeout=1)
+                            continue
                         # CASE 1B:
                         # IF IT WAS A REPLICA, WE NEED TO CHECK AND PROMOTE A PROXY IF POSSIBLE
                         else:
-                            promote_ip = -1
+                            self.avail_ip[k] = False
+                            req_str = 'http://' + self.ip_port + '/kv-store/demote_replica'
+                            res = req.put(req_str,
+                                          json=self.avail_ip,
+                                          headers={'content-type': 'application/json'},
+                                          timeout=1)
+                            continue
+                            '''promote_ip = -1
                             # CHECK IF WE HAVE PROXIES AVAILABLE
                             for ip, status in self.avail_ip:
                                 if status == True and ip not in replica_nodes:
@@ -57,10 +69,10 @@ class NodeTracker(Thread):
                             else:
                                 # GO INTO DEGRADED MODE
                                 self.avail_ip[k] = False
-                                return 'degraded'
+                                return 'degraded'''''
                     # CASE 1C
                     else:
-                        pass
+                        continue
                     # ALWAYS GOING TO SET KEY FALSE FOR AVAIL_IP[k]
                     #self.avail_ip[k] = False
 
@@ -70,7 +82,7 @@ class NodeTracker(Thread):
                     # CASE 2C
                     # IF dict[k] WAS ALREADY EQUAL TO True THEN WE GOOD, JUST AN UP NODE THAT'S STILL UP
                     if self.avail_ip[k] == True:
-                        pass
+                        continue
                     # IF THE NODE USED TO BE FALSE, AND NOW IT IS TRUE, A PARTITION JUST HEALED
                     # AND WE NEED TO COMPARE VECTOR CLOCKS
                     else:
@@ -78,14 +90,21 @@ class NodeTracker(Thread):
                         # SEND REQUEST TO CHANGE AVAILIP
                         if k not in replica_nodes:
                             self.avail_ip[k] = True
-                            url_str = 'http://' + self.ip_port + '/kv-store/update_AVAILIP'
-                            res = req.put(url_str, timeout=1)
-                            self.avail_ip[k] = True
-                            return self.avail_ip
+                            req_str = 'http://' + self.ip_port + '/kv-store/update_AVAILIP'
+                            res = req.put(req_str,
+                                            json=self.avail_ip,
+                                            headers={'content-type':'application/json'},
+                                            timeout=1)
+                            continue
                         # CASE 2B
                         else:
-                            self.avail_ip[k]
-                            return k;
+                            self.avail_ip[k] = True
+                            req_str = 'http://' + self.ip_port + '/kv-store/merge_nodes'
+                            res = req.put(req_str,
+                                          json=k,
+                                          headers={'content-type':'application/json'},
+                                          timeout=1)
+                            continue
             # AFTER CHECKING ALL NODES TAKE A NAP
             time.sleep(1)
 
