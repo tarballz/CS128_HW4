@@ -145,15 +145,6 @@ def kvs_response(request, key):
                     return Response({'result': 'Error', 'msg': 'Cannot construct node-to-node entry'},
                                     status=status.HTTP_400_BAD_REQUEST)
 
-                if len(incoming_cp) <= 2:
-                    incoming_cp = ''
-                    print("init triggered")
-                    # Initialize vector clock.
-                    for k,v in current_vc.items():
-                        if v is not None:
-                            incoming_cp += str(v) + '.'
-                    # STRIP LAST LETTER FROM INCOMING CP
-                    incoming_cp = incoming_cp[:-1]
 
                 cp_list = incoming_cp.split('.')
                 print("current_vc.values(): %s" % (list(current_vc.values())))
@@ -224,7 +215,7 @@ def kvs_response(request, key):
                         if v is not None:
                             incoming_cp += str(v) + '.'
                     # STRIP LAST LETTER FROM INCOMING CP
-                    incoming_cp = incoming_cp[:-1]
+                    incoming_cp = incoming_cp.rstrip('.')
 
                     print("zero icp: %s" % (incoming_cp))
 
@@ -236,7 +227,7 @@ def kvs_response(request, key):
                                                                       'node_id': node_id,
                                                                       'timestamp': const_timestamp})
                     return Response(
-                        {'result': 'vector clock initialized', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
+                        {'result': 'New client', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
                          "timestamp": const_timestamp}, status=status.HTTP_201_CREATED)
 
                 cp_list = incoming_cp.split('.')
@@ -285,8 +276,6 @@ def kvs_response(request, key):
             except:
                 # ERROR HANDLING: KEY DOES NOT EXIST
                 return Response({'result':'Error','msg':'Key does not exist'},status=status.HTTP_400_BAD_REQUEST)
-
-
 
 
     # PROXY RESPONSE
