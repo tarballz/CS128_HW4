@@ -54,6 +54,8 @@ def is_replica():
 
 try:
     _thread.start_new_thread(NodeTracker.run, AVAILIP)
+except:
+
 
 # FAILURE RESPONSE -- BAD KEY INPUT
 @api_view(['GET', 'PUT'])
