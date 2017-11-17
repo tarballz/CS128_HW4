@@ -195,9 +195,28 @@ def kvs_response(request, key):
                 node_id         = list(current_vc.keys()).index(IPPORT)
                 new_timestamp   = int(time.time())
                 const_timestamp = new_timestamp # new_timestamp keeps updating :((
+                print("incoming_cp_CLIENT: %s" % (incoming_cp))
+                print(len(incoming_cp))
 
                 # len(causal_payload) == 0 if the user hasn't done ANY reads yet.
                 # TODO: MAKE SEPARATE CASE for len(causal_payload) == 0
+                if len(incoming_cp) <= 2:
+                    print("init triggered")
+                    # Initialize vector clock.
+                    incoming_cp = '0'
+                    for k,v in current_vc.items():
+                        current_vc[k] = 0
+                    for i in range(0, K):
+                        incoming_cp += '.0'
+                    # incoming_cp += '0'
+                    print("zero icp: %s" % (incoming_cp))
+                    Entry.objects.update_or_create(key=key, defaults={'val': input_value,
+                                                                      'causal_payload': incoming_cp,
+                                                                      'node_id': node_id,
+                                                                      'timestamp': const_timestamp})
+                    return Response(
+                        {'result': 'vector clock initialized', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
+                         "timestamp": const_timestamp}, status=status.HTTP_201_CREATED)
 
                 cp_list = incoming_cp.split('.')
                 # Need to do a GET to either compare values or confirm this entry is being
@@ -212,7 +231,7 @@ def kvs_response(request, key):
 
                 print("EXISTING ENTRY: ", existing_entry)
 
-                broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
+                # broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
 
                 # if causal_payload > current_vc
                 # I SET THIS TO BE "> -1" B/C IT DOES NOT MATTER IF VCS ARE THE SAME B/C CLIENT WILL NOT PASS A TIMESTAMP
