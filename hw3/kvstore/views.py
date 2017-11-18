@@ -8,7 +8,7 @@ from rest_framework.decorators import api_view
 from rest_framework import status
 from .models import Entry
 import requests as req
-import _thread
+from threading import Event
 from .NodeTracker import NodeTracker
 
 # SET DEBUG TO True  IF YOU'RE WORKING LOCALLY
@@ -20,6 +20,7 @@ K          = int(os.getenv('K', 3))
 VIEW       = os.getenv('VIEW', "0.0.0.0:8080,10.0.0.20:8080,10.0.0.21:8080,10.0.0.22:8080")
 IPPORT     = os.getenv('IPPORT', "0.0.0.0:8080")
 current_vc = collections.OrderedDict()
+# AVAILIP = nodes that are up.
 AVAILIP    = {}
 
 all_nodes     = []
@@ -40,9 +41,8 @@ if VIEW != None:
     if not DEBUG:
         all_nodes = VIEW.split(',')
     for node in all_nodes:
-        #node = node.split(':')[0]
         current_vc[node] = 0
-        AVAILIP[node]    = False
+        AVAILIP[node]    = True
 
     print(list(current_vc.values()))
     if len(VIEW) > K:
@@ -57,10 +57,15 @@ def is_replica():
     return (IPPORT in replica_nodes)
 
 
-try:
-    _thread.start_new_thread(NodeTracker.run, AVAILIP)
-except:
-    pass
+# try:
+#     _thread.start_new_thread(NodeTracker.run, AVAILIP)
+# except:
+#     pass
+
+stop_flag = Event()
+tracker_thread = NodeTracker(stop_flag)
+if not DEBUG:
+    tracker_thread.start()
 
 # FAILURE RESPONSE -- BAD KEY INPUT
 @api_view(['GET', 'PUT'])
@@ -292,9 +297,6 @@ def broadcast(key, value, cp, node_id, timestamp):
                                              'causal_payload': cp,
                                              'node_id': node_id,
                                              'timestamp': timestamp})
-            #response = Response(res.json())
-            #response.status_code = res.status_code
-            #return response
 
 # Gross-ass way to update current_vc
 def update_current_vc(new_cp):
@@ -354,6 +356,10 @@ def update_view(request):
     else:
         return Response({'result': 'error', 'msg': 'key value store is not available'}, status=status.HTTP_501_NOT_IMPLEMENTED)
 
+@api_view(['GET'])
+def check_nodes():
+    # new_ipport = request.data['ip_port']
+    return Response(status=status.HTTP_200_OK)
 
 def compare_vc(a, b):
     """
@@ -391,7 +397,5 @@ def laziest_node(r_nodes):
     return min(r_nodes.items(), key=lambda x: x[1])[0]
 
 
-def check_nodes():
-    # new_ipport = request.data['ip_port']
-    return Response(status=status.HTTP_200_OK)
+
 
