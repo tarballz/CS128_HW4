@@ -11,3 +11,4 @@ urlpatterns = [
     url(r'^kv-store/(?P<key>[a-zA-Z0-9_]){201,}$', views.failure),
     url(r'^kv-store/check_nodes', views.check_nodes)
 ]
+

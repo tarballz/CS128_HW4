@@ -9,11 +9,14 @@ from rest_framework import status
 from .models import Entry
 import requests as req
 import _thread
-from NodeTracker import NodeTracker
+from .NodeTracker import NodeTracker
 
+# SET DEBUG TO True  IF YOU'RE WORKING LOCALLY
+# SET DEBUG TO False IF YOU'RE WORKING THROUGH DOCKER
+DEBUG = False
 
 # Environment variables.
-K          = os.getenv('K', 3)
+K          = int(os.getenv('K', 3))
 VIEW       = os.getenv('VIEW', "0.0.0.0:8080,10.0.0.20:8080,10.0.0.21:8080,10.0.0.22:8080")
 IPPORT     = os.getenv('IPPORT', "0.0.0.0:8080")
 current_vc = collections.OrderedDict()
@@ -28,19 +31,21 @@ degraded_mode = False
 #     IP = IPPORT.split(':')[0]
 
 if VIEW != None:
-    # This is just for testing locally.
-    if VIEW != "0.0.0.0:8080":
+    if DEBUG:
+        # This is just for testing locally.
+        if VIEW != "0.0.0.0:8080":
+            all_nodes = VIEW.split(',')
+        else:
+            all_nodes = [VIEW]
+    if not DEBUG:
         all_nodes = VIEW.split(',')
-    else:
-        all_nodes = [VIEW]
-    # Strip out PORT field.
     for node in all_nodes:
         #node = node.split(':')[0]
         current_vc[node] = 0
-        AVAILIP[node]          = False
-    print(current_vc)
+        AVAILIP[node]    = False
+
     print(list(current_vc.values()))
-    if len(VIEW) >= K:
+    if len(VIEW) > K:
         replica_nodes = all_nodes[0:K]
         proxy_nodes   = all_nodes[K::]
     else:
@@ -55,7 +60,7 @@ def is_replica():
 try:
     _thread.start_new_thread(NodeTracker.run, AVAILIP)
 except:
-
+    pass
 
 # FAILURE RESPONSE -- BAD KEY INPUT
 @api_view(['GET', 'PUT'])
@@ -95,68 +100,144 @@ def kvs_response(request, key):
             # ERROR HANDLING: EMPTY VALUE or TOO LONG VALUE
             if 'val' not in request.data or sys.getsizeof(input_value) > 1024 * 1024 * 256:
                 return Response({'result':'Error','msg':'No value provided'},status=status.HTTP_400_BAD_REQUEST)
-
             # Maybe comment this out b/c causal payload can be '' in case if no reads have happened yet?
             if 'causal_payload' not in request.data:
                 return Response({'result': 'Error', 'msg': 'No causal_payload provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-            causal_payload = str(request.data['causal_payload'])
-            node_id        = list(current_vc.keys()).index(IPPORT)
-            new_timestamp  = int(time.time())
-            # len(causal_payload) == 0 if the user hasn't done ANY reads yet. 
-            # TODO: MAKE SEPARATE CASE for len(causal_payload) == 0
+            # IF DATA HAS NODE_ID, THEN WE'VE RECEIVED NODE-TO-NODE COMMUNICATION
+            # AND NEED TO STORE IT.
+            if 'timestamp' in request.data:
+                # BUILD INCOMING OBJECT.
+                try:
+                    incoming_key       = str(request.data['key'])
+                    incoming_value     = str(request.data['val'])
+                    incoming_cp        = str(request.data['causal_payload'])
+                    incoming_node_id   = request.data['node_id']
+                    incoming_timestamp = request.data['timestamp']
+                except:
+                    return Response({'result': 'Error', 'msg': 'Cannot construct node-to-node entry'},
+                                    status=status.HTTP_400_BAD_REQUEST)
 
-            cp_list = causal_payload.split('.')
-            # Need to do a GET to either compare values or confirm this entry is being
-            # entered for the first time.
-            try:
-                existing_entry = Entry.objects.get(key=key)
-                existing_timestamp = existing_entry.timestamp
-            except:
-                new_entry = True
 
-            # if causal_payload > current_vc
-            if compare_vc(cp_list, list(current_vc.values())) == 1:
-                print ("OLD VC:")
-                print (current_vc)
-                # Gross-ass way to update current_vc
-                i = 0
-                for k,v in current_vc.items():
-                    if current_vc[k] != None:
-                        current_vc[k] = cp_list[i]
-                        i += 1
-                print ("NEW VC:")
-                print (current_vc)
-                if new_entry:
-                    existing_timestamp = new_timestamp
-                entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
-                                                                                   'causal_payload': causal_payload,
-                                                                                   'node_id': node_id,
-                                                                                   'timestamp': existing_timestamp})
-                return Response(
-                    {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": causal_payload,
-                     "timestamp": existing_timestamp}, status=status.HTTP_200_OK)
-            # Vector clocks are same value, have to compare timestamps.
-            elif compare_vc(cp_list, list(current_vc.values())) == 0:
-                # if existing_timestamp < new_timestamp:
-                entry, created = Entry.objects.update_or_create(key=key, defaults={'value': input_value,
-                                                                                   'causal_payload': causal_payload,
-                                                                                   'node_id': node_id,
-                                                                                   'timestamp': existing_timestamp})
-                return Response({'result': 'success', 'value': input_value, 'node_id': node_id,
-                                 'causal_payload': causal_payload, 'timestamp': existing_timestamp},
-                                status=status.HTTP_200_OK)
-                # Can't go back in time, reject incoming PUT
-                # elif existing_timestamp > timestamp:
-                    #return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
-                                    #status=status.HTTP_406_NOT_ACCEPTABLE)
+                cp_list = incoming_cp.split('.')
+                print("current_vc.values(): %s" % (list(current_vc.values())))
+                # IF INCOMING_CP > CURRENT_VC
+                if compare_vc(cp_list, list(current_vc.values())) == 1:
+                    update_current_vc(incoming_cp)
+                    entry, created = Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                                      'causal_payload': incoming_cp,
+                                                                                      'node_id': incoming_node_id,
+                                                                                      'timestamp': incoming_timestamp})
+                    return Response(
+                        {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
+                         "causal_payload": incoming_cp,
+                         "timestamp": incoming_timestamp}, status=status.HTTP_200_OK)
 
-            # causal payload < current_vc
+                elif compare_vc(cp_list, list(current_vc.values())) == 0:
+                    new_entry = False
+                    try:
+                        existing_entry = Entry.objects.get(key=key)
+                    except:
+                        new_entry = True
+                    if new_entry:
+                        # FAILURE: KEY DOES NOT EXIST
+                        # CREATE ENTRY IN OUR DB SINCE THE ENTRY DOESN'T EXIST.
+                        Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                         'causal_payload': incoming_cp,
+                                                                         'node_id': incoming_node_id,
+                                                                         'timestamp': incoming_timestamp})
+                        return Response({'result': 'Success', 'msg': 'Key does not exist'},
+                                        status=status.HTTP_201_CREATED)
+                    # IF WE'VE GOTTEN HERE, KEY EXISTS
+                    else:
+                        if incoming_timestamp > existing_entry.timestamp:
+                            Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                             'causal_payload': incoming_cp,
+                                                                             'node_id': incoming_node_id,
+                                                                             'timestamp': incoming_timestamp})
+                            return Response(
+                                {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
+                                 "causal_payload": incoming_cp,
+                                 "timestamp": incoming_timestamp}, status=status.HTTP_200_OK)
+                        else:
+                            return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                            status=status.HTTP_406_NOT_ACCEPTABLE)
+
+                # IF INCOMONG_CP < CURRENT_VC
+                #elif compare_vc(cp_list, list(current_vc.values())) == -1:
+                else:
+                    return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                    status=status.HTTP_406_NOT_ACCEPTABLE)
+
+
+            # IF NO TIMESTAMP, WE KNOW THIS PUT IS FROM THE CLIENT.
             else:
-                return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
-                                status=status.HTTP_406_NOT_ACCEPTABLE)
+                incoming_cp     = str(request.data['causal_payload'])
+                node_id         = list(current_vc.keys()).index(IPPORT)
+                new_timestamp   = int(time.time())
+                const_timestamp = new_timestamp # new_timestamp keeps updating :((
+                print("incoming_cp_CLIENT: %s" % (incoming_cp))
+                print(len(incoming_cp))
 
-                # TODO: Figure out what to do in case incoming_timestamp == timestamp
+                # len(causal_payload) == 0 if the user hasn't done ANY reads yet.
+                if len(incoming_cp) <= 2:
+                    incoming_cp = ''
+                    print("init triggered")
+                    # Initialize vector clock.
+                    for k,v in current_vc.items():
+                        if v is not None:
+                            incoming_cp += str(v) + '.'
+                    # STRIP LAST LETTER FROM INCOMING CP
+                    incoming_cp = incoming_cp.rstrip('.')
+
+                    print("zero icp: %s" % (incoming_cp))
+
+                    if not DEBUG:
+                        broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
+
+                    Entry.objects.update_or_create(key=key, defaults={'val': input_value,
+                                                                      'causal_payload': incoming_cp,
+                                                                      'node_id': node_id,
+                                                                      'timestamp': const_timestamp})
+                    return Response(
+                        {'result': 'New client', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
+                         "timestamp": const_timestamp}, status=status.HTTP_201_CREATED)
+
+                cp_list = incoming_cp.split('.')
+                # Need to do a GET to either compare values or confirm this entry is being
+                # entered for the first time.
+                existing_entry = None
+                try:
+                    existing_entry = Entry.objects.get(key=key)
+                    #existing_entry = Entry.objects.latest('timestamp')
+                    existing_timestamp = existing_entry.timestamp
+                except:
+                    new_entry = True
+
+                print("EXISTING ENTRY: ", existing_entry)
+
+                if not DEBUG:
+                    broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
+
+                # if causal_payload > current_vc
+                # I SET THIS TO BE "> -1" B/C IT DOES NOT MATTER IF VCS ARE THE SAME B/C CLIENT WILL NOT PASS A TIMESTAMP
+                if compare_vc(cp_list, list(current_vc.values())) > -1:
+                    # print ("OLD VC: %s" % (current_vc))
+                    update_current_vc(cp_list)
+
+                    entry, created = Entry.objects.update_or_create(key=key, defaults={'val': input_value,
+                                                                                       'causal_payload': incoming_cp,
+                                                                                       'node_id': node_id,
+                                                                                       'timestamp': const_timestamp})
+                    return Response(
+                        {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
+                         "timestamp": const_timestamp}, status=status.HTTP_200_OK)
+
+
+                # causal payload < current_vc
+                else:
+                    return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                    status=status.HTTP_406_NOT_ACCEPTABLE)
 
 
         # MAIN GET
@@ -164,25 +245,29 @@ def kvs_response(request, key):
             try:
                 # KEY EXISTS
                 existing_entry = Entry.objects.get(key=key)
-                return Response(
-                    {'result': 'success', "value": existing_entry.value, "node_id": existing_entry.node_id,
-                     "causal_payload": existing_entry.causal_payload,
-                     "timestamp": existing_entry.timestamp}, status=status.HTTP_200_OK)
+                return Response({'result': 'success', "value": existing_entry.val, "node_id": existing_entry.node_id,"causal_payload": existing_entry.causal_payload,"timestamp": existing_entry.timestamp}, status=status.HTTP_200_OK)
             except:
                 # ERROR HANDLING: KEY DOES NOT EXIST
                 return Response({'result':'Error','msg':'Key does not exist'},status=status.HTTP_400_BAD_REQUEST)
+
 
     # PROXY RESPONSE
     else:
 
     # 	# GENERATE BASE URL STRING
-        url_str = 'http://'+os.environ['MAINIP']+'/kv-store/'+key
+    #     url_str = 'http://'+os.environ['MAINIP']+'/kv-store/'+key
+        # TODO: Implement some form of gossip or laziest_node() is useless.
+        dest_node = laziest_node(current_vc)
+        print("SELECTED ", dest_node, " TO FORWARD TO.")
+
+        # Some letters get chopped off when I forward.  Only retaining last letter..?
+        url_str = 'http://' + dest_node + '/kv-store/' + key
 
 
     # 	# FORWARD GET REQUEST
     # 		# PACKAGE AND RETURN RESPONSE TO CLIENT
         if method == 'GET':
-            res = req.get(url_str)
+            res = req.get(url=url_str, timeout=3)
             response = Response(res.json())
             response.status_code = res.status_code
     # 	# MODIFY URL STRING WITH PUT INPUT AND FORWARD PUT REQUEST
@@ -197,7 +282,30 @@ def kvs_response(request, key):
 
         return response
 
-# CORRECT KEYS
+
+def broadcast(key, value, cp, node_id, timestamp):
+    for dest_node in replica_nodes:
+        if dest_node != IPPORT:
+            url_str = 'http://' + dest_node + '/kv-store/' + key
+            res = req.put(url=url_str, data={'key': key,
+                                             'val': value,
+                                             'causal_payload': cp,
+                                             'node_id': node_id,
+                                             'timestamp': timestamp})
+            #response = Response(res.json())
+            #response.status_code = res.status_code
+            #return response
+
+# Gross-ass way to update current_vc
+def update_current_vc(new_cp):
+    i = 0
+    for k, v in current_vc.items():
+        if current_vc[k] != None:
+            current_vc[k] = new_cp[i]
+            i += 1
+    print("NEW VC: %s" % (current_vc))
+
+
 @api_view(['PUT'])
 def update_view(request):
     new_ipport = request.data['ip_port']
@@ -247,9 +355,6 @@ def update_view(request):
         return Response({'result': 'error', 'msg': 'key value store is not available'}, status=status.HTTP_501_NOT_IMPLEMENTED)
 
 
-try:
-
-
 def compare_vc(a, b):
     """
     Compares two vector clocks, returns -1 if ``a < b``,
@@ -259,6 +364,8 @@ def compare_vc(a, b):
     gt = False
     lt = False
     for j, k in zip(a, b):
+        if j == '.' or k == '.':
+            return 1
         gt |= int(j) > int(k)
         lt |= int(j) < int(k)
         if gt and lt:
@@ -280,6 +387,11 @@ def find_min():
             key = k
     return key
 
+def laziest_node(r_nodes):
+    return min(r_nodes.items(), key=lambda x: x[1])[0]
+
+
 def check_nodes():
     # new_ipport = request.data['ip_port']
     return Response(status=status.HTTP_200_OK)
+

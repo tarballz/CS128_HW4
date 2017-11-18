@@ -36,20 +36,18 @@ class NodeTracker(Thread):
                         if k not in replica_nodes:
                             self.avail_ip[k] = False
                             req_str = 'http://' + self.ip_port + '/kv-store/update_AVAILIP'
-                            res = req.put(req_str,
-                                          json=self.avail_ip
-                                          headers={'content-type': 'application/json'},
-                                          timeout=1)
+                            req.put(req_str,
+                                    data=self.avail_ip,
+                                    timeout=1)
                             continue
                         # CASE 1B:
                         # IF IT WAS A REPLICA, WE NEED TO CHECK AND PROMOTE A PROXY IF POSSIBLE
                         else:
                             self.avail_ip[k] = False
                             req_str = 'http://' + self.ip_port + '/kv-store/demote_replica'
-                            res = req.put(req_str,
-                                          json=self.avail_ip,
-                                          headers={'content-type': 'application/json'},
-                                          timeout=1)
+                            req.put(req_str,
+                                    data=self.avail_ip,
+                                    timeout=1)
                             continue
                             '''promote_ip = -1
                             # CHECK IF WE HAVE PROXIES AVAILABLE
@@ -91,19 +89,17 @@ class NodeTracker(Thread):
                         if k not in replica_nodes:
                             self.avail_ip[k] = True
                             req_str = 'http://' + self.ip_port + '/kv-store/update_AVAILIP'
-                            res = req.put(req_str,
-                                            json=self.avail_ip,
-                                            headers={'content-type':'application/json'},
-                                            timeout=1)
+                            req.put(req_str,
+                                    data=self.avail_ip,
+                                    timeout=1)
                             continue
                         # CASE 2B
                         else:
                             self.avail_ip[k] = True
                             req_str = 'http://' + self.ip_port + '/kv-store/merge_nodes'
-                            res = req.put(req_str,
-                                          json=k,
-                                          headers={'content-type':'application/json'},
-                                          timeout=1)
+                            req.put(req_str,
+                                    data={'key':k},
+                                    timeout=1)
                             continue
             # AFTER CHECKING ALL NODES TAKE A NAP
             time.sleep(1)
