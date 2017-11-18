@@ -6,18 +6,21 @@ from rest_framework import status
 
 class NodeTracker(Thread):
 
-    def __init__(self, IPPORT,  AVAILIP, event):
+    def __init__(self, IPPORT,  AVAILIP, event, replica_nodes):
         self.avail_ip = AVAILIP
         self.ip_port = IPPORT
         #Thread.__init__(self)
         self.stopped = event
+        self.replica_nodes = replica_nodes
 
     # DOESN'T RETURN         = DO NOTHING
     # RETURN TYPE DICTIONARY = UPDATE views.AVAIL_IP with run's OUTPUT
     # RETURN STRING_LIST     = RETURNS STRING_LIST [PROXY_IP , REPLICA_DOWN_IP]
     # RETURN STRING          = RETURNS STRING "REPLICA_IP" WHICH WE NEED TO DIRECT TO MERGING DATA
     # RETURN STRING          = RETURNS STRING 'degraded", BECAUSE WE DON'T HAVE AVAILABLE PROXIES
-    def run(self, replica_nodes,):
+    def run(self):
+        replica_nodes = self.replica_nodes
+
         while not self.stopped():
             for k, v in self.avail_ip:
                 try:
