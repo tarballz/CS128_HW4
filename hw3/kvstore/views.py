@@ -62,10 +62,10 @@ def is_replica():
 # except:
 #     pass
 
-stop_flag = Event()
-tracker_thread = NodeTracker(stop_flag)
-if not DEBUG:
-    tracker_thread.start()
+# stop_flag = Event()
+# tracker_thread = NodeTracker(stop_flag)
+# if not DEBUG:
+#     tracker_thread.start()
 
 # FAILURE RESPONSE -- BAD KEY INPUT
 @api_view(['GET', 'PUT'])
