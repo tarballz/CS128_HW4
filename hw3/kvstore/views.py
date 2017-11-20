@@ -117,8 +117,8 @@ def kvs_response(request, key):
                     incoming_key       = str(request.data['key'])
                     incoming_value     = str(request.data['val'])
                     incoming_cp        = str(request.data['causal_payload'])
-                    incoming_node_id   = request.data['node_id']
-                    incoming_timestamp = request.data['timestamp']
+                    incoming_node_id   = int(request.data['node_id'])
+                    incoming_timestamp = int(request.data['timestamp'])
                 except:
                     return Response({'result': 'Error', 'msg': 'Cannot construct node-to-node entry'},
                                     status=status.HTTP_400_BAD_REQUEST)
@@ -197,6 +197,7 @@ def kvs_response(request, key):
 
                     print("zero icp: %s" % (incoming_cp))
 
+                    # TODO: Increment our VC before we broadcast.
                     if not DEBUG:
                         broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
 
@@ -228,7 +229,7 @@ def kvs_response(request, key):
                 # I SET THIS TO BE "> -1" B/C IT DOES NOT MATTER IF VCS ARE THE SAME B/C CLIENT WILL NOT PASS A TIMESTAMP
                 if compare_vc(cp_list, list(current_vc.values())) > -1:
                     # print ("OLD VC: %s" % (current_vc))
-                    update_current_vc(cp_list)
+                    update_current_vc_client(cp_list)
 
                     entry, created = Entry.objects.update_or_create(key=key, defaults={'val': input_value,
                                                                                        'causal_payload': incoming_cp,
@@ -253,7 +254,7 @@ def kvs_response(request, key):
                 return Response({'result': 'success', "value": existing_entry.val, "node_id": existing_entry.node_id,"causal_payload": existing_entry.causal_payload,"timestamp": existing_entry.timestamp}, status=status.HTTP_200_OK)
             except:
                 # ERROR HANDLING: KEY DOES NOT EXIST
-                return Response({'result':'Error','msg':'Key does not exist'},status=status.HTTP_400_BAD_REQUEST)
+                return Response({'result':'Error','msg':'Key does not exist'},status=status.HTTP_404_NOT_FOUND)
 
 
     # PROXY RESPONSE
@@ -292,17 +293,33 @@ def broadcast(key, value, cp, node_id, timestamp):
     for dest_node in replica_nodes:
         if dest_node != IPPORT:
             url_str = 'http://' + dest_node + '/kv-store/' + key
-            res = req.put(url=url_str, data={'key': key,
-                                             'val': value,
-                                             'causal_payload': cp,
-                                             'node_id': node_id,
-                                             'timestamp': timestamp})
+            try:
+                res = req.put(url=url_str, data={'key': key,
+                                                 'val': value,
+                                                 'causal_payload': cp,
+                                                 'node_id': node_id,
+                                                 'timestamp': timestamp})
+            except:
+                pass
 
 # Gross-ass way to update current_vc
 def update_current_vc(new_cp):
     i = 0
     for k, v in current_vc.items():
         if current_vc[k] != None:
+            current_vc[k] = new_cp[i]
+            i += 1
+    print("NEW 1VC: %s" % (current_vc))
+
+# Gross-ass way to update current_vc
+def update_current_vc_client(new_cp):
+    # Need to cast new_cp to an int list to I can increment it's elements.
+    new_cp = list(map(int, new_cp))
+    i = 0
+    for k, v in current_vc.items():
+        if current_vc[k] != None:
+            if IPPORT == k:
+                new_cp[i] += 1
             current_vc[k] = new_cp[i]
             i += 1
     print("NEW 1VC: %s" % (current_vc))
