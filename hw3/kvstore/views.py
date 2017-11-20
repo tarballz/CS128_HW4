@@ -43,8 +43,8 @@ if VIEW != None:
     for node in all_nodes:
         current_vc[node] = 0
         AVAILIP[node]    = True
-
-    print(list(current_vc.values()))
+    if DEBUG:
+        print(list(current_vc.values()))
     if len(VIEW) > K:
         replica_nodes = all_nodes[0:K]
         proxy_nodes   = list(set(all_nodes) - set(replica_nodes))
@@ -125,7 +125,8 @@ def kvs_response(request, key):
 
 
                 cp_list = incoming_cp.split('.')
-                print("current_vc.values(): %s" % (list(current_vc.values())))
+                if DEBUG:
+                    print("current_vc.values(): %s" % (list(current_vc.values())))
                 # IF INCOMING_CP > CURRENT_VC
                 if compare_vc(cp_list, list(current_vc.values())) == 1:
                     update_current_vc(incoming_cp)
@@ -181,13 +182,16 @@ def kvs_response(request, key):
                 node_id         = list(current_vc.keys()).index(IPPORT)
                 new_timestamp   = int(time.time())
                 const_timestamp = new_timestamp # new_timestamp keeps updating :((
-                print("incoming_cp_CLIENT: %s" % (incoming_cp))
-                print(len(incoming_cp))
+
+                if DEBUG:
+                    print("incoming_cp_CLIENT: %s" % (incoming_cp))
+                    print(len(incoming_cp))
 
                 # len(causal_payload) == 0 if the user hasn't done ANY reads yet.
                 if len(incoming_cp) <= 2:
                     incoming_cp = ''
-                    print("init triggered")
+                    if DEBUG:
+                        print("init triggered")
                     # Initialize vector clock.
                     for k,v in current_vc.items():
                         if v is not None:
@@ -195,7 +199,8 @@ def kvs_response(request, key):
                     # STRIP LAST LETTER FROM INCOMING CP
                     incoming_cp = incoming_cp.rstrip('.')
 
-                    print("zero icp: %s" % (incoming_cp))
+                    if DEBUG:
+                        print("zero icp: %s" % (incoming_cp))
 
                     # TODO: Increment our VC before we broadcast.
                     if not DEBUG:
@@ -220,7 +225,8 @@ def kvs_response(request, key):
                 except:
                     new_entry = True
 
-                print("EXISTING ENTRY: ", existing_entry)
+                if DEBUG:
+                    print("EXISTING ENTRY: ", existing_entry)
 
                 if not DEBUG:
                     broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
@@ -264,7 +270,8 @@ def kvs_response(request, key):
     #     url_str = 'http://'+os.environ['MAINIP']+'/kv-store/'+key
         # TODO: Implement some form of gossip or laziest_node() is useless.
         dest_node = laziest_node(current_vc)
-        print("SELECTED ", dest_node, " TO FORWARD TO.")
+        if DEBUG:
+            print("SELECTED ", dest_node, " TO FORWARD TO.")
 
         # Some letters get chopped off when I forward.  Only retaining last letter..?
         url_str = 'http://' + dest_node + '/kv-store/' + key
@@ -309,7 +316,8 @@ def update_current_vc(new_cp):
         if current_vc[k] != None:
             current_vc[k] = new_cp[i]
             i += 1
-    print("NEW 1VC: %s" % (current_vc))
+    if DEBUG:
+        print("NEW 1VC: %s" % (current_vc))
 
 # Gross-ass way to update current_vc
 def update_current_vc_client(new_cp):
@@ -322,7 +330,8 @@ def update_current_vc_client(new_cp):
                 new_cp[i] += 1
             current_vc[k] = new_cp[i]
             i += 1
-    print("NEW 1VC: %s" % (current_vc))
+    if DEBUG:
+        print("NEW 1VC: %s" % (current_vc))
 
 
 @api_view(['PUT'])
