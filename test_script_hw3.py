@@ -140,7 +140,7 @@ class TestHW3(unittest.TestCase):
         res = requests.get(self.replica_address[2] + '/kv-store/cat', data={'causal_payload': ''})
         self.assertTrue(res.status_code in [404, '404'])
         d = res.json()
-        self.assertEqual(d['result'], 'error')
+        self.assertEqual(d['result'], 'Error')
         if not TEST_STATUS_CODES_ONLY:
             print "Test C: Get non-existent key via replica:"
             print res
@@ -312,7 +312,7 @@ class TestHW3(unittest.TestCase):
             print res.text
 
     def test_l_transitive_causality(self):
-        res = requests.put(self.replica_address[0] + 'kv-store/t', data={'val': 'transitive', 'causal_payload': ''})
+        res = requests.put(self.replica_address[0] + '/kv-store/t', data={'val': 'transitive', 'causal_payload': ''})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
@@ -323,7 +323,7 @@ class TestHW3(unittest.TestCase):
             print res
             print res.text
 
-        res = requests.get(self.replica_address[1] + 'kv-store/t', data={'causal_payload': self.causal_payload['t']})
+        res = requests.get(self.replica_address[1] + '/kv-store/t', data={'causal_payload': self.causal_payload['t']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
@@ -334,7 +334,7 @@ class TestHW3(unittest.TestCase):
             print res
             print res.text
 
-        res = requests.put(self.replica_address[1] + 'kv-store/u',
+        res = requests.put(self.replica_address[1] + '/kv-store/u',
                            data={'val': 'later', 'causal_payload': self.causal_payload['t']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
@@ -346,7 +346,7 @@ class TestHW3(unittest.TestCase):
             print res
             print res.text
 
-        res = requests.get(self.replica_address[2] + 'kv-store/u', data={'causal_payload': self.causal_payload['u']})
+        res = requests.get(self.replica_address[2] + '/kv-store/u', data={'causal_payload': self.causal_payload['u']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
@@ -357,7 +357,7 @@ class TestHW3(unittest.TestCase):
             print res
             print res.text
 
-        res = requests.get(self.replica_address[2] + 'kv-store/t', data={'causal_payload': self.causal_payload['t']})
+        res = requests.get(self.replica_address[2] + '/kv-store/t', data={'causal_payload': self.causal_payload['t']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
@@ -434,7 +434,7 @@ class TestHW3(unittest.TestCase):
         self.__kill_node(self.ip_nodeid[self.replicas[2]])
         self.killed_nodes.append(self.replicas[2])
 
-        res = requests.put(self.replica_address[0] + "/kv-store/update-view?type=remove", data={'ip_port': str(replicas[2]) + ':8080'})
+        res = requests.put(self.replica_address[0] + "/kv-store/update-view?type=remove", data={'ip_port': str(self.replicas[2]) + ':8080'})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['msg'], 'success')

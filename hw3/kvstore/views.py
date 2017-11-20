@@ -47,7 +47,7 @@ if VIEW != None:
     print(list(current_vc.values()))
     if len(VIEW) > K:
         replica_nodes = all_nodes[0:K]
-        proxy_nodes   = all_nodes[K::]
+        proxy_nodes   = list(set(all_nodes) - set(replica_nodes))
     else:
         degraded_mode = True
         replica_nodes = VIEW
@@ -205,7 +205,7 @@ def kvs_response(request, key):
                                                                       'node_id': node_id,
                                                                       'timestamp': const_timestamp})
                     return Response(
-                        {'result': 'New client', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
+                        {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
                          "timestamp": const_timestamp}, status=status.HTTP_201_CREATED)
 
                 cp_list = incoming_cp.split('.')
@@ -305,14 +305,16 @@ def update_current_vc(new_cp):
         if current_vc[k] != None:
             current_vc[k] = new_cp[i]
             i += 1
-    print("NEW VC: %s" % (current_vc))
+    print("NEW 1VC: %s" % (current_vc))
 
 
 @api_view(['PUT'])
 def update_view(request):
     new_ipport = request.data['ip_port']
 
-    if request.GET.get('type', '') == 'add':
+    #print("TYPE IS: %s" % (str(request.GET.get('type'))))
+
+    if str(request.GET.get('type')) == 'add':
         # Added node should be a replica.
         all_nodes.append(new_ipport)
         if len(all_nodes) <= K:
@@ -325,12 +327,15 @@ def update_view(request):
                 current_vc[new_ipport] = 0
         elif len(all_nodes) > K:
             proxy_nodes.append(new_ipport)
+            if new_ipport not in current_vc:
+                # Init new entry into our dictionary, and set to None b/c proxy.
+                current_vc.update({new_ipport: None})
             degraded_mode = False
 
         return Response(
-            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport), "number_of_nodes": len(all_nodes)})
+            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport), "number_of_nodes": len(all_nodes)}, status=status.HTTP_200_OK)
 
-    elif request.GET.get('type', '') == 'remove':
+    elif str(request.GET.get('type')) == 'remove':
         all_nodes.remove(new_ipport)
         if new_ipport in replica_nodes:
             replica_nodes.remove(new_ipport)
@@ -346,11 +351,15 @@ def update_view(request):
 
                     if len(replica_nodes) > K:
                         degraded_mode = False
-                else:
-                    degraded_mode = True
+                    else:
+                        degraded_mode = True
 
         elif IPPORT in proxy_nodes:
             proxy_nodes.remove(IPPORT)
+
+        return Response(
+            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport), "number_of_nodes": len(all_nodes)},
+            status=status.HTTP_200_OK)
 
 
     else:
