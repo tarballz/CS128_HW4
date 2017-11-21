@@ -11,6 +11,9 @@ import requests as req
 from threading import Event
 from .NodeTracker import NodeTracker
 
+#TODO: Implement a form of gossip() for GET requests where we share ALL Entry objects
+#TODO: using Entry.objects.all()
+
 # SET DEBUG TO True  IF YOU'RE WORKING LOCALLY
 # SET DEBUG TO False IF YOU'RE WORKING THROUGH DOCKER
 DEBUG = False
@@ -354,7 +357,8 @@ def update_current_vc_client(new_cp):
     if DEBUG:
         print("NEW 1VC: %s" % (current_vc))
 
-
+# TODO: Implement gossip() for puts
+# TODO: b/c when we do a PUT we have 10 seconds to disseminate data.
 @api_view(['PUT'])
 def update_view(request):
     new_ipport = request.data['ip_port']
@@ -364,23 +368,26 @@ def update_view(request):
     if str(request.GET.get('type')) == 'add':
         # Added node should be a replica.
         all_nodes.append(new_ipport)
-        if len(all_nodes) <= K:
+        if len(replica_nodes) < K:
             replica_nodes.append(new_ipport)
             # Check if we're resurrecting a node that was previously in our OrderedDict current_vc
             if new_ipport not in current_vc:
                 # Init new entry into our dictionary.
                 current_vc.update({new_ipport: 0})
             else:
+                # TODO: Give the original number back to this current_vc location?
                 current_vc[new_ipport] = 0
-        elif len(all_nodes) > K:
+        elif len(replica_nodes) >= K:
             proxy_nodes.append(new_ipport)
             if new_ipport not in current_vc:
                 # Init new entry into our dictionary, and set to None b/c proxy.
                 current_vc.update({new_ipport: None})
+            else:
+                current_vc[new_ipport] = None
             degraded_mode = False
 
         return Response(
-            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport), "number_of_nodes": len(all_nodes)},
+            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport), "number_of_nodes": len(set(all_nodes) - set(proxy_nodes))},
             status=status.HTTP_200_OK)
 
     elif str(request.GET.get('type')) == 'remove':
@@ -390,23 +397,26 @@ def update_view(request):
             # Instead of deleting the node from the OrderedDict, we will just set it's value to None to indicate
             # that it's been removed, but this way we're still able to preserve accurate node_id's.
             current_vc[new_ipport] = None
-            if len(replica_nodes) <= K:
+            if len(replica_nodes) < K:
                 # If we have any "spare" nodes in proxy_nodes, promote it to a replica.
                 if len(proxy_nodes) > 0:
                     promoted = proxy_nodes.pop()
                     replica_nodes.append(promoted)
-                    current_vc[promoted] = 0
+                    if promoted not in current_vc:
+                        current_vc.update({promoted: 0})
+                    else:
+                        current_vc[promoted] = 0
 
                     if len(replica_nodes) > K:
                         degraded_mode = False
                     else:
                         degraded_mode = True
 
-        elif IPPORT in proxy_nodes:
+        elif new_ipport in proxy_nodes:
             proxy_nodes.remove(IPPORT)
 
         return Response(
-            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport), "number_of_nodes": len(all_nodes)},
+            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport), "number_of_nodes": len(replica_nodes)},
             status=status.HTTP_200_OK)
 
 

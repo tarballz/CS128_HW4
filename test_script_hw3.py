@@ -287,7 +287,7 @@ class TestHW3(unittest.TestCase):
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], ['trial', 'tryout'])
+        self.assertTrue(d['value'], ['trial', 'tryout'])
         if not TEST_STATUS_CODES_ONLY:
             print "Test K: Monotonic reads (get the value from the second replica, accepting the outcome of second put from *either* replica):"
             print res
@@ -299,6 +299,7 @@ class TestHW3(unittest.TestCase):
         d = res.json()
         self.assertEqual(d['result'], 'success')
         self.causal_payload['t'] = d['causal_payload']
+        # self.causal_payload['t'] = d['causal_payloadd_ad']
         if not TEST_STATUS_CODES_ONLY:
             print "Test L: Transitive causality (put key,value on replica0):"
             print res
@@ -384,11 +385,11 @@ class TestHW3(unittest.TestCase):
             print res
             print res.text
 
-        self.replica_address = ["http://" + hostname + ":" + self.port[x] for x in self.replicas]
+        self.replica_address = ["https://" + hostname + ":" + self.port[x] for x in self.replicas]
         self.proxies = list(set(self.all_nodes) - set(self.replicas) - set(self.killed_nodes))
-        self.proxy_address = ["http://" + hostname + ":" + self.port[x] for x in self.proxies]
+        self.proxy_address = ["https://" + hostname + ":" + self.port[x] for x in self.proxies]
 
-        res = requests.get("http://" + hostname + ":8087/kv-store/dog", data={'causal_payload': self.causal_payload['dog']})
+        res = requests.get("https://" + hostname + ":8087/kv-store/dog", data={'causal_payload': self.causal_payload['dog']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
@@ -398,7 +399,7 @@ class TestHW3(unittest.TestCase):
             print res
             print res.text
 
-        res = requests.get("http://" + hostname + ":8087/kv-store/m", data={'causal_payload': self.causal_payload['m']})
+        res = requests.get("https://" + hostname + ":8087/kv-store/m", data={'causal_payload': self.causal_payload['m']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
