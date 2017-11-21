@@ -132,7 +132,7 @@ def kvs_response(request, key):
                     print("current_vc.values(): %s" % (list(current_vc.values())))
                 # IF INCOMING_CP > CURRENT_VC
                 if compare_vc(cp_list, list(current_vc.values())) == 1:
-                    update_current_vc(incoming_cp)
+                    update_current_vc(cp_list)
                     Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
                                                                       'causal_payload': incoming_cp,
                                                                       'node_id': incoming_node_id,
@@ -198,14 +198,19 @@ def kvs_response(request, key):
                     # Initialize vector clock.
                     for k, v in current_vc.items():
                         if v is not None:
-                            incoming_cp += str(v) + '.'
+                            # incoming_cp += str(v) + '.'
+                            if IPPORT == k:
+                                v += 1
+                            incoming_cp += ''.join([str(v), '.'])
+                            # INCREMENT OUR LOCATION IN THE CP
+                            if IPPORT == k:
+                                v += 1
                     # STRIP LAST LETTER FROM INCOMING CP
                     incoming_cp = incoming_cp.rstrip('.')
 
                     if DEBUG:
                         print("zero icp: %s" % (incoming_cp))
 
-                    # TODO: Increment our VC before we broadcast.
                     if not DEBUG:
                         broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
 
@@ -238,8 +243,15 @@ def kvs_response(request, key):
                 # I SET THIS TO BE "> -1" B/C IT DOES NOT MATTER IF VCS ARE THE SAME B/C CLIENT WILL NOT PASS A TIMESTAMP
                 if compare_vc(cp_list, list(current_vc.values())) > -1:
                     # print ("OLD VC: %s" % (current_vc))
-                    # TODO: Somehow update incoming_cp to take on the += 1 that's applied to cp_list.
                     update_current_vc_client(cp_list)
+                    #TODO: TURN cp_list INTO incoming_cp
+                    incoming_cp = '.'.join(list(map(str, current_vc.values())))
+                    if DEBUG:
+                        print("cp_list: %s" % (cp_list))
+                        for i in cp_list:
+                            print("type: %s" % (type(i)))
+                        print("incoming_cp: %s" % (incoming_cp))
+
 
                     Entry.objects.update_or_create(key=key, defaults={'val': input_value,
                                                                       'causal_payload': incoming_cp,
@@ -317,6 +329,8 @@ def broadcast(key, value, cp, node_id, timestamp):
 
 # Gross-ass way to update current_vc
 def update_current_vc(new_cp):
+    # Need to cast new_cp to an int list to I can increment it's elements.
+    new_cp = list(map(int, new_cp))
     i = 0
     for k, v in current_vc.items():
         if current_vc[k] != None:
