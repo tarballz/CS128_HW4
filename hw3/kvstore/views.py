@@ -70,7 +70,7 @@ def is_replica():
 # FAILURE RESPONSE -- BAD KEY INPUT
 @api_view(['GET', 'PUT'])
 def failure(request, key):
-    return Response({'result': 'Error', 'msg': 'Key not valid'}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+    return Response({'result': 'error', 'msg': 'Key not valid'}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
 
 
 @api_view(['GET'])
@@ -102,15 +102,15 @@ def kvs_response(request, key):
             new_entry = False
             # ERROR HANDLING: INVALID KEY TYPE (NONE)
             if 'val' not in request.data:
-                return Response({'result': 'Error', 'msg': 'No value provided'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'result': 'error', 'msg': 'No value provided'}, status=status.HTTP_400_BAD_REQUEST)
             input_value = request.data['val']
 
             # ERROR HANDLING: EMPTY VALUE or TOO LONG VALUE
             if 'val' not in request.data or sys.getsizeof(input_value) > 1024 * 1024 * 256:
-                return Response({'result': 'Error', 'msg': 'No value provided'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'result': 'error', 'msg': 'No value provided'}, status=status.HTTP_400_BAD_REQUEST)
             # Maybe comment this out b/c causal payload can be '' in case if no reads have happened yet?
             if 'causal_payload' not in request.data:
-                return Response({'result': 'Error', 'msg': 'No causal_payload provided'},
+                return Response({'result': 'error', 'msg': 'No causal_payload provided'},
                                 status=status.HTTP_400_BAD_REQUEST)
 
             # IF DATA HAS NODE_ID, THEN WE'VE RECEIVED NODE-TO-NODE COMMUNICATION
@@ -124,7 +124,7 @@ def kvs_response(request, key):
                     incoming_node_id = int(request.data['node_id'])
                     incoming_timestamp = int(request.data['timestamp'])
                 except:
-                    return Response({'result': 'Error', 'msg': 'Cannot construct node-to-node entry'},
+                    return Response({'result': 'error', 'msg': 'Cannot construct node-to-node entry'},
                                     status=status.HTTP_400_BAD_REQUEST)
 
                 cp_list = incoming_cp.split('.')
@@ -266,7 +266,7 @@ def kvs_response(request, key):
                                  "timestamp": existing_entry.timestamp}, status=status.HTTP_200_OK)
             except:
                 # ERROR HANDLING: KEY DOES NOT EXIST
-                return Response({'result': 'Error', 'msg': 'Key does not exist'}, status=status.HTTP_404_NOT_FOUND)
+                return Response({'result': 'error', 'msg': 'Key does not exist'}, status=status.HTTP_404_NOT_FOUND)
 
 
     # PROXY RESPONSE

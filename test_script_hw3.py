@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7
+#!/usr/bin/python
 
 import unittest
 import subprocess
@@ -19,7 +19,7 @@ HOST_PORTS = ['8083', '8084', '8085', '8086']
 
 # SET THIS TO FALSE IF YOU WANT RICHER DEBUG PRINTING.
 # Prints the response data for each test, at each step.
-TEST_STATUS_CODES_ONLY = False
+TEST_STATUS_CODES_ONLY = True
 
 
 def stop_all_docker_containers(sudo):
@@ -57,10 +57,10 @@ class TestHW3(unittest.TestCase):
         cls.node_ids = node_ids
 
         cls.port = {}
-        cls.port['10.0.0.20'] = 8083
-        cls.port['10.0.0.21'] = 8084
-        cls.port['10.0.0.22'] = 8085
-        cls.port['10.0.0.23'] = 8086
+        cls.port['10.0.0.20'] = '8083'
+        cls.port['10.0.0.21'] = '8084'
+        cls.port['10.0.0.22'] = '8085'
+        cls.port['10.0.0.23'] = '8086'
 
         cls.ip_nodeid = {}
         cls.ip_nodeid['10.0.0.20'] = 0
@@ -76,11 +76,11 @@ class TestHW3(unittest.TestCase):
             m = re.match("([0-9\.]*):8080", ip_port)
             cls.replicas.append(m.group(1))
 
-        cls.replica_address = ["http://" + hostname + ":" + str(cls.port[x]) for x in cls.replicas]
+        cls.replica_address = ["http://" + hostname + ":" + cls.port[x] for x in cls.replicas]
 
         cls.all_nodes = ['10.0.0.20', '10.0.0.21', '10.0.0.22', '10.0.0.23']
         cls.proxies = list(set(cls.all_nodes) - set(cls.replicas))
-        cls.proxy_address = ["http://" + hostname + ":" + str(cls.port[x]) for x in cls.proxies]
+        cls.proxy_address = ["http://" + hostname + ":" + cls.port[x] for x in cls.proxies]
         cls.causal_payload = {}
         cls.killed_nodes = []
 
@@ -115,7 +115,6 @@ class TestHW3(unittest.TestCase):
         d = res.json()
         self.causal_payload['dog'] = d['causal_payload']
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], 'bark')
         if not TEST_STATUS_CODES_ONLY:
             print "Test A: Putting non-existent key via replica:"
             print res
@@ -123,12 +122,10 @@ class TestHW3(unittest.TestCase):
 
     def test_b_put_existing_key_via_replica(self):
         # put existing key via replica with new value
-        res = requests.put(self.replica_address[1] + '/kv-store/dog',
-                           data={'val': 'woof', 'causal_payload': self.causal_payload['dog']})
+        res = requests.put(self.replica_address[1] + '/kv-store/dog', data={'val': 'woof', 'causal_payload': self.causal_payload['dog']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], 'woof')
         if not TEST_STATUS_CODES_ONLY:
             print "Test B: Modifying (put) existing key via replica:"
             print res
@@ -140,15 +137,15 @@ class TestHW3(unittest.TestCase):
         res = requests.get(self.replica_address[2] + '/kv-store/cat', data={'causal_payload': ''})
         self.assertTrue(res.status_code in [404, '404'])
         d = res.json()
-        self.assertEqual(d['result'], 'Error')
+        self.assertEqual(d['result'], 'error')
         if not TEST_STATUS_CODES_ONLY:
             print "Test C: Get non-existent key via replica:"
             print res
             print res.text
 
     def test_d_get_existing_key_via_replica(self):
-        res = requests.get(self.replica_address[0] + '/kv-store/dog',
-                           data={'causal_payload': self.causal_payload['dog']})
+        sleep(10)
+        res = requests.get(self.replica_address[0] + '/kv-store/dog', data={'causal_payload': self.causal_payload['dog']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
@@ -161,12 +158,10 @@ class TestHW3(unittest.TestCase):
     """ FORWARDING INSTANCE PUT TESTS """
 
     def test_e_put_nonexistent_key_via_forwarding_instance(self):
-        res = requests.put(self.proxy_address[0] + '/kv-store/' + self.key1,
-                           data={'val': self.val1, 'causal_payload': ''})
+        res = requests.put(self.proxy_address[0] + '/kv-store/' + self.key1,data={'val': self.val1, 'causal_payload': ''})
         self.assertTrue(res.status_code, [201, '201'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], self.val1)
         self.causal_payload[self.key1] = d['causal_payload']
         if not TEST_STATUS_CODES_ONLY:
             print "Test E: Put non-existing key via forwarding instance:"
@@ -174,12 +169,10 @@ class TestHW3(unittest.TestCase):
             print res.text
 
     def test_f_put_existing_key_via_forwarding_instance(self):
-        res = requests.put(self.proxy_address[0] + '/kv-store/' + self.key1,
-                           data={'val': self.val2, 'causal_payload': self.causal_payload[self.key1]})
+        res = requests.put(self.proxy_address[0] + '/kv-store/' + self.key1, data={'val': self.val2, 'causal_payload': self.causal_payload[self.key1]})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
-        self.assertEqual(d['result'], 'Error')
-        self.assertEqual(d['value'], self.val2)
+        self.assertEqual(d['result'], 'success')
         self.causal_payload[self.key1] = d['causal_payload']
         if not TEST_STATUS_CODES_ONLY:
             print "Test F: Put existing key via forwarding instance:"
@@ -192,15 +185,14 @@ class TestHW3(unittest.TestCase):
         res = requests.get(self.proxy_address[0] + '/kv-store/' + self.key2, data={'causal_payload': ''})
         self.assertTrue(res.status_code, [404, '404'])
         d = res.json()
-        self.assertEqual(d['result'], 'Error')
+        self.assertEqual(d['result'], 'error')
         if not TEST_STATUS_CODES_ONLY:
             print "Test G: Get non-existing key via forwarding instance:"
             print res
             print res.text
 
     def test_h_get_existing_key_via_forwarding_instance(self):
-        res = requests.get(self.proxy_address[0] + '/kv-store/' + self.key1,
-                           data={'causal_payload': self.causal_payload[self.key1]})
+        res = requests.get(self.proxy_address[0] + '/kv-store/' + self.key1,data={'causal_payload': self.causal_payload[self.key1]})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
@@ -217,26 +209,22 @@ class TestHW3(unittest.TestCase):
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], 'a')
         self.causal_payload['k_old'] = d['causal_payload']
         if not TEST_STATUS_CODES_ONLY:
             print "Test I: Bounded staleness (putting in the original key on a replica):"
             print res
             print res.text
-        res = requests.put(self.replica_address[0] + '/kv-store/k1',
-                           data={'val': 'b', 'causal_payload': self.causal_payload['k_old']})
+        res = requests.put(self.replica_address[0] + '/kv-store/k1', data={'val': 'b', 'causal_payload': self.causal_payload['k_old']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], 'b')
         self.causal_payload['k_new'] = d['causal_payload']
         if not TEST_STATUS_CODES_ONLY:
             print "Test I: Bounded staleness (putting in a new value for that key on that same replica):"
             print res
             print res.text
         sleep(10)
-        res = requests.get(self.replica_address[1] + '/kv-store/k1',
-                           data={'causal_payload': self.causal_payload['k_old']})
+        res = requests.get(self.replica_address[1] + '/kv-store/k1', data={'causal_payload': self.causal_payload['k_old']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
@@ -251,7 +239,6 @@ class TestHW3(unittest.TestCase):
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], 'a')
         self.causal_payload['k2'] = d['causal_payload']
         if not TEST_STATUS_CODES_ONLY:
             print "Test J: Bounded staleness (putting in the original key):"
@@ -273,35 +260,30 @@ class TestHW3(unittest.TestCase):
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], 'try')
         self.causal_payload['m'] = d['causal_payload']
         if not TEST_STATUS_CODES_ONLY:
             print "Test K: Monotonic reads (putting in the original key on a replica):"
             print res
             print res.text
-        res = requests.put(self.replica_address[0] + '/kv-store/m',
-                           data={'val': 'trial', 'causal_payload': self.causal_payload['m']})
+        res = requests.put(self.replica_address[0] + '/kv-store/m', data={'val': 'trial', 'causal_payload': self.causal_payload['m']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], 'trial')
         self.causal_payload['m'] = d['causal_payload']
         if not TEST_STATUS_CODES_ONLY:
             print "Test K: Monotonic reads (put a new value for that same key on the same replica as before):"
             print res
             print res.text
-        res = requests.put(self.replica_address[1] + '/kv-store/m',
-                           data={'val': 'tryout', 'causal_payload': self.causal_payload['m']})
+        res = requests.put(self.replica_address[1] + '/kv-store/m', data={'val': 'tryout', 'causal_payload': self.causal_payload['m']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], 'tryout')
         self.causal_payload['m'] = d['causal_payload']
         if not TEST_STATUS_CODES_ONLY:
             print "Test K: Monotonic reads (put a new value for that same key, on a different replica this time):"
             print res
             print res.text
-        res = requests.get(self.replica_address[1] + '/kv-store/k2', data={'causal_payload': self.causal_payload['m']})
+        res = requests.get(self.replica_address[1] + '/kv-store/m', data={'causal_payload': self.causal_payload['m']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
@@ -316,7 +298,6 @@ class TestHW3(unittest.TestCase):
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], 'transitive')
         self.causal_payload['t'] = d['causal_payload']
         if not TEST_STATUS_CODES_ONLY:
             print "Test L: Transitive causality (put key,value on replica0):"
@@ -334,12 +315,10 @@ class TestHW3(unittest.TestCase):
             print res
             print res.text
 
-        res = requests.put(self.replica_address[1] + '/kv-store/u',
-                           data={'val': 'later', 'causal_payload': self.causal_payload['t']})
+        res = requests.put(self.replica_address[1] + '/kv-store/u', data={'val': 'later', 'causal_payload': self.causal_payload['t']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], 'later')
         self.causal_payload['u'] = d['causal_payload']
         if not TEST_STATUS_CODES_ONLY:
             print "Test L: Transitive causality (put a key1,value1 on a replica1):"
@@ -377,7 +356,7 @@ class TestHW3(unittest.TestCase):
         self.killed_nodes.append(self.replicas[2])
         exec_string_for1 = sudo + " docker run -p 8087:8080 --net=mynet --ip=10.0.0.24 -e IPPORT=10.0.0.24:8080 -d %s" % container
         self.node_ids.append(subprocess.check_output(exec_string_for1, shell=True).rstrip('\n'))
-        self.port['10.0.0.24'] = 8087
+        self.port['10.0.0.24'] = '8087'
         self.ip_nodeid['10.0.0.24'] = 4
         self.all_nodes.append('10.0.0.24')
 
@@ -393,7 +372,7 @@ class TestHW3(unittest.TestCase):
 
         res = requests.get(self.replica_address[0] + '/kv-store/get_all_replicas')
         d = res.json()
-        replicas_ports = d['replicas']
+        replica_ports = d['replicas']
         self.replicas = []
         for ip_port in replica_ports:
             m = re.match("([0-9\.]*):8080", ip_port)
@@ -463,7 +442,6 @@ class TestHW3(unittest.TestCase):
         d = res.json()
         self.causal_payload['o'] = d['causal_payload']
         self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], 'degraded')
         if not TEST_STATUS_CODES_ONLY:
             print "Test N: Remove a node (issue put key,value to see that even in degraded mode, the write is accepted):"
             print res
