@@ -313,7 +313,7 @@ def kvs_response(request, key):
 
         # MAIN GET
         elif method == 'GET':
-
+            ping_nodes()
             # TODO: Broadcast using Entry.objects.all()
             for entry in Entry.objects.all():
                 if DEBUG:
