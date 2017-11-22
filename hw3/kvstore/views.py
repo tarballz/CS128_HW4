@@ -11,8 +11,8 @@ import requests as req
 from threading import Event
 from .NodeTracker import NodeTracker
 
-#TODO: Implement a form of gossip() for GET requests where we share ALL Entry objects
-#TODO: using Entry.objects.all()
+# TODO: Implement a form of gossip() for GET requests where we share ALL Entry objects
+# TODO: using Entry.objects.all()
 
 # SET DEBUG TO True  IF YOU'RE WORKING LOCALLY
 # SET DEBUG TO False IF YOU'RE WORKING THROUGH DOCKER
@@ -21,6 +21,8 @@ DEBUG = False
 # Environment variables.
 K = int(os.getenv('K', 3))
 VIEW = os.getenv('VIEW', "0.0.0.0:8080,10.0.0.20:8080,10.0.0.21:8080,10.0.0.22:8080")
+if DEBUG:
+    print("VIEW is of type: %s" % (type(VIEW)))
 IPPORT = os.getenv('IPPORT', "0.0.0.0:8080")
 current_vc = collections.OrderedDict()
 # AVAILIP = nodes that are up.
@@ -34,26 +36,36 @@ degraded_mode = False
 # if IPPORT != "0.0.0.0":
 #     IP = IPPORT.split(':')[0]
 
-if VIEW != None:
-    if DEBUG:
-        # This is just for testing locally.
-        if VIEW != "0.0.0.0:8080":
-            all_nodes = VIEW.split(',')
-        else:
-            all_nodes = [VIEW]
-    if not DEBUG:
+if DEBUG:
+    # This is just for testing locally.
+    if VIEW != "0.0.0.0:8080":
         all_nodes = VIEW.split(',')
-    for node in all_nodes:
-        current_vc[node] = 0
-        AVAILIP[node] = True
-    if DEBUG:
-        print(list(current_vc.values()))
-    if len(VIEW) > K:
-        replica_nodes = all_nodes[0:K]
-        proxy_nodes = list(set(all_nodes) - set(replica_nodes))
     else:
-        degraded_mode = True
-        replica_nodes = VIEW
+        all_nodes = [VIEW]
+
+if DEBUG:
+    print("all_nodes: %s" % (all_nodes))
+    print("len of all_n: %d" % (len(all_nodes)))
+
+if not DEBUG:
+    all_nodes = VIEW.split(',')
+for node in all_nodes:
+    current_vc[node] = 0
+    AVAILIP[node] = True
+if DEBUG:
+    print(list(current_vc.values()))
+if len(VIEW) > K:
+    replica_nodes = all_nodes[0:K]
+    proxy_nodes = list(set(all_nodes) - set(replica_nodes))
+else:
+    degraded_mode = True
+    replica_nodes = VIEW
+
+if DEBUG:
+    print("proxy_nodes: %s" % (proxy_nodes))
+    print("len of prox_n: %d" % (len(proxy_nodes)))
+    print("replica_nodes: %s" % (replica_nodes))
+    print("len of rep_n: %d" % (len(replica_nodes)))
 
 
 def is_replica():
@@ -116,21 +128,53 @@ def kvs_response(request, key):
                 return Response({'result': 'error', 'msg': 'No causal_payload provided'},
                                 status=status.HTTP_400_BAD_REQUEST)
 
-            # IF DATA HAS NODE_ID, THEN WE'VE RECEIVED NODE-TO-NODE COMMUNICATION
+            # IF DATA HAS TIMESTAMP, THEN WE'VE RECEIVED NODE-TO-NODE COMMUNICATION
             # AND NEED TO STORE IT.
             if 'timestamp' in request.data:
                 # BUILD INCOMING OBJECT.
                 try:
-                    #incoming_key = str(request.data['key'])
+                    # incoming_key = str(request.data['key'])
                     incoming_value = str(request.data['val'])
                     incoming_cp = str(request.data['causal_payload'])
                     incoming_node_id = int(request.data['node_id'])
                     incoming_timestamp = int(request.data['timestamp'])
+                    is_all = eval(request.data['is_all'])
                 except:
                     return Response({'result': 'error', 'msg': 'Cannot construct node-to-node entry'},
                                     status=status.HTTP_400_BAD_REQUEST)
 
                 cp_list = incoming_cp.split('.')
+
+                # TODO: Implement a "special" way to handle these GET broadcasts.
+                if is_all:
+                    try:
+                        existing_entry = Entry.objects.get(key=key)
+                        my_cp = existing_entry.causal_payload.split('.')
+                        my_timestamp = existing_entry.timestamp
+                        # Incoming cp > my cp
+                        if (compare_vc(cp_list, my_cp) == 1) or (
+                            (compare_vc(cp_list, my_cp) == 0) and (incoming_timestamp >= my_timestamp)):
+                            Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                              'causal_payload': incoming_cp,
+                                                                              'node_id': incoming_node_id,
+                                                                              'timestamp': incoming_timestamp})
+                            return Response({'result': 'Success', 'msg': 'Replaced'},
+                                            status=status.HTTP_202_ACCEPTED)
+                        else:
+                            return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                            status=status.HTTP_406_NOT_ACCEPTABLE)
+
+
+                    except:
+                        # FAILURE: KEY DOES NOT EXIST
+                        # CREATE ENTRY IN OUR DB SINCE THE ENTRY DOESN'T EXIST.
+                        Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                          'causal_payload': incoming_cp,
+                                                                          'node_id': incoming_node_id,
+                                                                          'timestamp': incoming_timestamp})
+                        return Response({'result': 'Success', 'msg': 'Key does not exist'},
+                                        status=status.HTTP_201_CREATED)
+
                 if DEBUG:
                     print("current_vc.values(): %s" % (list(current_vc.values())))
                 # IF INCOMING_CP > CURRENT_VC
@@ -145,7 +189,7 @@ def kvs_response(request, key):
                          "causal_payload": incoming_cp,
                          "timestamp": incoming_timestamp}, status=status.HTTP_200_OK)
 
-                elif compare_vc(cp_list, list(current_vc.values())) == 0:
+                if compare_vc(cp_list, list(current_vc.values())) == 0:
                     new_entry = False
                     try:
                         existing_entry = Entry.objects.get(key=key)
@@ -200,14 +244,13 @@ def kvs_response(request, key):
                         print("init triggered")
                     # Initialize vector clock.
                     for k, v in current_vc.items():
-                        if v is not None:
+                        if AVAILIP[k]:
                             # incoming_cp += str(v) + '.'
-                            if IPPORT == k:
-                                v += 1
-                            incoming_cp += ''.join([str(v), '.'])
                             # INCREMENT OUR LOCATION IN THE CP
                             if IPPORT == k:
                                 v += 1
+                            incoming_cp += ''.join([str(v), '.'])
+
                     # STRIP LAST LETTER FROM INCOMING CP
                     incoming_cp = incoming_cp.rstrip('.')
 
@@ -215,7 +258,7 @@ def kvs_response(request, key):
                         print("zero icp: %s" % (incoming_cp))
 
                     if not DEBUG:
-                        broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
+                        broadcast(key, input_value, incoming_cp, node_id, const_timestamp, repr(False))
 
                     Entry.objects.update_or_create(key=key, defaults={'val': input_value,
                                                                       'causal_payload': incoming_cp,
@@ -240,21 +283,19 @@ def kvs_response(request, key):
                     print("EXISTING ENTRY: ", existing_entry)
 
                 if not DEBUG:
-                    broadcast(key, input_value, incoming_cp, node_id, const_timestamp)
+                    broadcast(key, input_value, incoming_cp, node_id, const_timestamp, repr(False))
 
                 # if causal_payload > current_vc
                 # I SET THIS TO BE "> -1" B/C IT DOES NOT MATTER IF VCS ARE THE SAME B/C CLIENT WILL NOT PASS A TIMESTAMP
                 if compare_vc(cp_list, list(current_vc.values())) > -1:
                     # print ("OLD VC: %s" % (current_vc))
                     update_current_vc_client(cp_list)
-                    #TODO: TURN cp_list INTO incoming_cp
                     incoming_cp = '.'.join(list(map(str, current_vc.values())))
                     if DEBUG:
                         print("cp_list: %s" % (cp_list))
                         for i in cp_list:
                             print("type: %s" % (type(i)))
                         print("incoming_cp: %s" % (incoming_cp))
-
 
                     Entry.objects.update_or_create(key=key, defaults={'val': input_value,
                                                                       'causal_payload': incoming_cp,
@@ -273,6 +314,16 @@ def kvs_response(request, key):
 
         # MAIN GET
         elif method == 'GET':
+
+            # TODO: Broadcast using Entry.objects.all()
+            for entry in Entry.objects.all():
+                if DEBUG:
+                    print("ENTRY INFO:")
+                    print(entry.key)
+                    print(entry.val)
+                    print("END")
+                broadcast(entry.key, entry.val, entry.causal_payload, entry.node_id, entry.timestamp, repr(True))
+
             try:
                 # KEY EXISTS
                 existing_entry = Entry.objects.get(key=key)
@@ -311,13 +362,14 @@ def kvs_response(request, key):
                 response = Response(res.json())
                 response.status_code = res.status_code
             except Exception:
+                AVAILIP[dest_node] = False
                 return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
 
         return response
 
 
-def broadcast(key, value, cp, node_id, timestamp):
-    for dest_node in replica_nodes:
+def broadcast(key, value, cp, node_id, timestamp, is_all):
+    for dest_node in all_nodes:
         if dest_node != IPPORT:
             url_str = 'http://' + dest_node + '/kv-store/' + key
             try:
@@ -325,9 +377,10 @@ def broadcast(key, value, cp, node_id, timestamp):
                                            'val': value,
                                            'causal_payload': cp,
                                            'node_id': node_id,
-                                           'timestamp': timestamp})
+                                           'timestamp': timestamp,
+                                           'is_all': is_all}, timeout=2)
             except:
-                pass
+                AVAILIP[dest_node] = False
 
 
 # Gross-ass way to update current_vc
@@ -336,7 +389,7 @@ def update_current_vc(new_cp):
     new_cp = list(map(int, new_cp))
     i = 0
     for k, v in current_vc.items():
-        if current_vc[k] != None:
+        if AVAILIP[k]:
             current_vc[k] = new_cp[i]
             i += 1
     if DEBUG:
@@ -349,7 +402,7 @@ def update_current_vc_client(new_cp):
     new_cp = list(map(int, new_cp))
     i = 0
     for k, v in current_vc.items():
-        if current_vc[k] != None:
+        if AVAILIP[k]:
             if IPPORT == k:
                 new_cp[i] += 1
             current_vc[k] = new_cp[i]
@@ -357,46 +410,72 @@ def update_current_vc_client(new_cp):
     if DEBUG:
         print("NEW 1VC: %s" % (current_vc))
 
+
 # TODO: Implement gossip() for puts
 # TODO: b/c when we do a PUT we have 10 seconds to disseminate data.
 @api_view(['PUT'])
 def update_view(request):
     new_ipport = request.data['ip_port']
+    node_num = 0
 
     # print("TYPE IS: %s" % (str(request.GET.get('type'))))
 
     if str(request.GET.get('type')) == 'add':
+        if DEBUG:
+            print("\t\t\tFor update_view before add")
+            print("proxy_nodes: %s" % (proxy_nodes))
+            print("len of prox_n: %d" % (len(proxy_nodes)))
+            print("replica_nodes: %s" % (replica_nodes))
+            print("len of rep_n: %d" % (len(replica_nodes)))
         # Added node should be a replica.
         all_nodes.append(new_ipport)
+        AVAILIP[new_ipport] = True
         if len(replica_nodes) < K:
+            if DEBUG:
+                print("\t\t\tIN DEGRADED MODE\nAPPENDING %s ONTO R_N LIST" % (new_ipport))
             replica_nodes.append(new_ipport)
             # Check if we're resurrecting a node that was previously in our OrderedDict current_vc
             if new_ipport not in current_vc:
                 # Init new entry into our dictionary.
                 current_vc.update({new_ipport: 0})
-            else:
-                # TODO: Give the original number back to this current_vc location?
-                current_vc[new_ipport] = 0
+                if DEBUG:
+                    print("\t\t\tUPDATING CURRENT_VC")
+                    print("current_vc: %s" % (current_vc.items()))
+                    print("%s should be in current_vc" % (new_ipport))
+        # Added node should be a proxy
         elif len(replica_nodes) >= K:
+            if DEBUG:
+                print("K = %d \t len(r_n) = %d" % (K, len(replica_nodes)))
+                print("APPENDING %s onto proxy_nodes" % (new_ipport))
             proxy_nodes.append(new_ipport)
             if new_ipport not in current_vc:
-                # Init new entry into our dictionary, and set to None b/c proxy.
-                current_vc.update({new_ipport: None})
-            else:
-                current_vc[new_ipport] = None
+                if DEBUG:
+                    print("Never seen %s before. Appending %s to current_vc (AKA global vc)" % (new_ipport, new_ipport))
+                # Init new entry into our dictionary.
+                current_vc.update({new_ipport: 0})
             degraded_mode = False
+        if DEBUG:
+            print("\t\t\tFor update_view after add")
+            print("proxy_nodes: %s" % (proxy_nodes))
+            print("len of prox_n: %d" % (len(proxy_nodes)))
+            print("replica_nodes: %s" % (replica_nodes))
+            print("len of rep_n: %d" % (len(replica_nodes)))
+
+        for k in AVAILIP:
+            if AVAILIP[k] is True:
+                node_num += 1
 
         return Response(
-            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport), "number_of_nodes": len(set(all_nodes) - set(proxy_nodes))},
+            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport),
+             "number_of_nodes": node_num},
             status=status.HTTP_200_OK)
 
     elif str(request.GET.get('type')) == 'remove':
-        all_nodes.remove(new_ipport)
+        # all_nodes.remove(new_ipport)
+        AVAILIP[new_ipport] = False
         if new_ipport in replica_nodes:
             replica_nodes.remove(new_ipport)
-            # Instead of deleting the node from the OrderedDict, we will just set it's value to None to indicate
-            # that it's been removed, but this way we're still able to preserve accurate node_id's.
-            current_vc[new_ipport] = None
+            current_vc[new_ipport] = 0
             if len(replica_nodes) < K:
                 # If we have any "spare" nodes in proxy_nodes, promote it to a replica.
                 if len(proxy_nodes) > 0:
@@ -415,14 +494,18 @@ def update_view(request):
         elif new_ipport in proxy_nodes:
             proxy_nodes.remove(IPPORT)
 
+        for k in AVAILIP:
+            if AVAILIP[k] is True:
+                node_num += 1
+
         return Response(
-            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport), "number_of_nodes": len(replica_nodes)},
+            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport),
+             "number_of_nodes": node_num},
             status=status.HTTP_200_OK)
 
 
-    else:
-        return Response({'result': 'error', 'msg': 'key value store is not available'},
-                        status=status.HTTP_501_NOT_IMPLEMENTED)
+    return Response({'result': 'error', 'msg': 'key value store is not available'},
+                    status=status.HTTP_501_NOT_IMPLEMENTED)
 
 
 @api_view(['GET'])

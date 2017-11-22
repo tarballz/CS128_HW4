@@ -19,7 +19,7 @@ HOST_PORTS = ['8083', '8084', '8085', '8086']
 
 # SET THIS TO FALSE IF YOU WANT RICHER DEBUG PRINTING.
 # Prints the response data for each test, at each step.
-TEST_STATUS_CODES_ONLY = True
+TEST_STATUS_CODES_ONLY = False
 
 
 def stop_all_docker_containers(sudo):
