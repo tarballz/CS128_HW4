@@ -148,7 +148,6 @@ def kvs_response(request, key):
 
                 # TODO: Implement a "special" way to handle these GET broadcasts.
                 if is_all:
-                    ping_nodes()
                     try:
                         existing_entry = Entry.objects.get(key=key)
                         my_cp = existing_entry.causal_payload.split('.')
