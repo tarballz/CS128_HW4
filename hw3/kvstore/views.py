@@ -16,11 +16,13 @@ from .NodeTracker import NodeTracker
 
 # SET DEBUG TO True  IF YOU'RE WORKING LOCALLY
 # SET DEBUG TO False IF YOU'RE WORKING THROUGH DOCKER
-DEBUG = True
+DEBUG = False
 
 # Environment variables.
 K = int(os.getenv('K', 3))
 VIEW = os.getenv('VIEW', "0.0.0.0:8080,10.0.0.20:8080,10.0.0.21:8080,10.0.0.22:8080")
+if DEBUG:
+    print("VIEW is of type: %s" % (type(VIEW)))
 IPPORT = os.getenv('IPPORT', "0.0.0.0:8080")
 current_vc = collections.OrderedDict()
 # AVAILIP = nodes that are up.
@@ -535,7 +537,7 @@ def update_view(request):
 
 
 @api_view(['GET'])
-def check_nodes(request):
+def check_nodes():
     # new_ipport = request.data['ip_port']
     return Response(status=status.HTTP_200_OK)
 
