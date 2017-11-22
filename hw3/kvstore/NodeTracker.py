@@ -21,7 +21,7 @@ class NodeTracker(Thread):
         global replica_nodes
 
         while not self.stopped().wait(1.0):
-            for k, v in AVAILIP:
+            for k, v in AVAILIP.items():
                 try:
                     url_str = 'http://' + k + '/kv-store/check_nodes'
                     res = req.get(url_str, timeout=1)

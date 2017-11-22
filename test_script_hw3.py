@@ -148,12 +148,12 @@ class TestHW3(unittest.TestCase):
         res = requests.get(self.replica_address[0] + '/kv-store/dog', data={'causal_payload': self.causal_payload['dog']})
         self.assertTrue(res.status_code, [200, '200'])
         d = res.json()
-        self.assertEqual(d['result'], 'success')
-        self.assertEqual(d['value'], 'woof')
         if not TEST_STATUS_CODES_ONLY:
             print "Test D: Get existing key via replica:"
             print res
             print res.text
+        self.assertEqual(d['result'], 'success')
+        self.assertEqual(d['value'], 'woof')
 
     """ FORWARDING INSTANCE PUT TESTS """
 
