@@ -16,11 +16,13 @@ from .NodeTracker import NodeTracker
 
 # SET DEBUG TO True  IF YOU'RE WORKING LOCALLY
 # SET DEBUG TO False IF YOU'RE WORKING THROUGH DOCKER
-DEBUG = True
+DEBUG = False
 
 # Environment variables.
 K = int(os.getenv('K', 3))
 VIEW = os.getenv('VIEW', "0.0.0.0:8080,10.0.0.20:8080,10.0.0.21:8080,10.0.0.22:8080")
+if DEBUG:
+    print("VIEW is of type: %s" % (type(VIEW)))
 IPPORT = os.getenv('IPPORT', "0.0.0.0:8080")
 current_vc = collections.OrderedDict()
 # AVAILIP = nodes that are up.
@@ -146,6 +148,7 @@ def kvs_response(request, key):
 
                 # TODO: Implement a "special" way to handle these GET broadcasts.
                 if is_all:
+                    ping_nodes()
                     try:
                         existing_entry = Entry.objects.get(key=key)
                         my_cp = existing_entry.causal_payload.split('.')
@@ -173,54 +176,54 @@ def kvs_response(request, key):
                                                                           'timestamp': incoming_timestamp})
                         return Response({'result': 'Success', 'msg': 'Key does not exist'},
                                         status=status.HTTP_201_CREATED)
-                else:
-                    # IF INCOMING_CP > CURRENT_VC
-                    if compare_vc(cp_list, list(current_vc.values())) == 1:
-                        update_current_vc(cp_list)
+
+                # IF INCOMING_CP > CURRENT_VC
+                if compare_vc(cp_list, list(current_vc.values())) == 1:
+                    update_current_vc(cp_list)
+                    Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                      'causal_payload': incoming_cp,
+                                                                      'node_id': incoming_node_id,
+                                                                      'timestamp': incoming_timestamp})
+                    return Response(
+                        {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
+                         "causal_payload": incoming_cp,
+                         "timestamp": incoming_timestamp}, status=status.HTTP_200_OK)
+
+                if compare_vc(cp_list, list(current_vc.values())) == 0:
+                    new_entry = False
+                    try:
+                        existing_entry = Entry.objects.get(key=key)
+                    except:
+                        new_entry = True
+                    if new_entry:
+                        # FAILURE: KEY DOES NOT EXIST
+                        # CREATE ENTRY IN OUR DB SINCE THE ENTRY DOESN'T EXIST.
                         Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
                                                                           'causal_payload': incoming_cp,
                                                                           'node_id': incoming_node_id,
                                                                           'timestamp': incoming_timestamp})
-                        return Response(
-                            {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
-                             "causal_payload": incoming_cp,
-                             "timestamp": incoming_timestamp}, status=status.HTTP_200_OK)
-
-                    elif compare_vc(cp_list, list(current_vc.values())) == 0:
-                        new_entry = False
-                        try:
-                            existing_entry = Entry.objects.get(key=key)
-                        except:
-                            new_entry = True
-                        if new_entry:
-                            # FAILURE: KEY DOES NOT EXIST
-                            # CREATE ENTRY IN OUR DB SINCE THE ENTRY DOESN'T EXIST.
+                        return Response({'result': 'Success', 'msg': 'Key does not exist'},
+                                        status=status.HTTP_201_CREATED)
+                    # IF WE'VE GOTTEN HERE, KEY EXISTS
+                    else:
+                        if incoming_timestamp > existing_entry.timestamp:
                             Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
                                                                               'causal_payload': incoming_cp,
                                                                               'node_id': incoming_node_id,
                                                                               'timestamp': incoming_timestamp})
-                            return Response({'result': 'Success', 'msg': 'Key does not exist'},
-                                            status=status.HTTP_201_CREATED)
-                        # IF WE'VE GOTTEN HERE, KEY EXISTS
+                            return Response(
+                                {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
+                                 "causal_payload": incoming_cp,
+                                 "timestamp": incoming_timestamp}, status=status.HTTP_200_OK)
                         else:
-                            if incoming_timestamp > existing_entry.timestamp:
-                                Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
-                                                                                  'causal_payload': incoming_cp,
-                                                                                  'node_id': incoming_node_id,
-                                                                                  'timestamp': incoming_timestamp})
-                                return Response(
-                                    {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
-                                     "causal_payload": incoming_cp,
-                                     "timestamp": incoming_timestamp}, status=status.HTTP_200_OK)
-                            else:
-                                return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
-                                                status=status.HTTP_406_NOT_ACCEPTABLE)
+                            return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                            status=status.HTTP_406_NOT_ACCEPTABLE)
 
-                    # IF INCOMONG_CP < CURRENT_VC
-                    # elif compare_vc(cp_list, list(current_vc.values())) == -1:
-                    else:
-                        return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
-                                        status=status.HTTP_406_NOT_ACCEPTABLE)
+                # IF INCOMONG_CP < CURRENT_VC
+                # elif compare_vc(cp_list, list(current_vc.values())) == -1:
+                else:
+                    return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                    status=status.HTTP_406_NOT_ACCEPTABLE)
 
 
             # IF NO TIMESTAMP, WE KNOW THIS PUT IS FROM THE CLIENT.
@@ -311,7 +314,7 @@ def kvs_response(request, key):
 
         # MAIN GET
         elif method == 'GET':
-
+            ping_nodes()
             # TODO: Broadcast using Entry.objects.all()
             for entry in Entry.objects.all():
                 if DEBUG:
