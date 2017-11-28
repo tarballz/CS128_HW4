@@ -139,7 +139,7 @@ def kvs_response(request, key):
                     incoming_cp = str(request.data['causal_payload'])
                     incoming_node_id = int(request.data['node_id'])
                     incoming_timestamp = int(request.data['timestamp'])
-                    is_all = eval(request.data['is_all'])
+                    is_GET_broadcast = int(request.data['is_GET_broadcast'])
                 except:
                     return Response({'result': 'error', 'msg': 'Cannot construct node-to-node entry'},
                                     status=status.HTTP_400_BAD_REQUEST)
@@ -147,7 +147,7 @@ def kvs_response(request, key):
                 cp_list = incoming_cp.split('.')
 
                 # TODO: Implement a "special" way to handle these GET broadcasts.
-                if is_all:
+                if is_GET_broadcast == 1:
                     try:
                         existing_entry = Entry.objects.get(key=key)
                         my_cp = existing_entry.causal_payload.split('.')
@@ -257,7 +257,7 @@ def kvs_response(request, key):
                         print("zero icp: %s" % (incoming_cp))
 
                     if not DEBUG:
-                        broadcast(key, input_value, incoming_cp, node_id, const_timestamp, repr(False))
+                        broadcast(key, input_value, incoming_cp, node_id, const_timestamp, 0)
 
                     Entry.objects.update_or_create(key=key, defaults={'val': input_value,
                                                                       'causal_payload': incoming_cp,
@@ -282,7 +282,7 @@ def kvs_response(request, key):
                     print("EXISTING ENTRY: ", existing_entry)
 
                 if not DEBUG:
-                    broadcast(key, input_value, incoming_cp, node_id, const_timestamp, repr(False))
+                    broadcast(key, input_value, incoming_cp, node_id, const_timestamp, 0)
 
                 # if causal_payload > current_vc
                 # I SET THIS TO BE "> -1" B/C IT DOES NOT MATTER IF VCS ARE THE SAME B/C CLIENT WILL NOT PASS A TIMESTAMP
@@ -321,7 +321,7 @@ def kvs_response(request, key):
                     print(entry.key)
                     print(entry.val)
                     print("END")
-                broadcast(entry.key, entry.val, entry.causal_payload, entry.node_id, entry.timestamp, repr(True))
+                broadcast(entry.key, entry.val, entry.causal_payload, entry.node_id, entry.timestamp, 1)
 
             try:
                 # KEY EXISTS
@@ -367,7 +367,7 @@ def kvs_response(request, key):
         return response
 
 
-def broadcast(key, value, cp, node_id, timestamp, is_all):
+def broadcast(key, value, cp, node_id, timestamp, is_GET_broadcast):
     for dest_node in all_nodes:
         if dest_node != IPPORT:
             url_str = 'http://' + dest_node + '/kv-store/' + key
@@ -377,7 +377,7 @@ def broadcast(key, value, cp, node_id, timestamp, is_all):
                                            'causal_payload': cp,
                                            'node_id': node_id,
                                            'timestamp': timestamp,
-                                           'is_all': is_all}, timeout=2)
+                                           'is_GET_broadcast': is_GET_broadcast}, timeout=2)
             except:
                 AVAILIP[dest_node] = False
 
@@ -445,7 +445,7 @@ def update_view(request):
     node_num = 0
     # print("TYPE IS: %s" % (str(request.GET.get('type'))))
 
-    if str(request.GET.get('type')) == 'add':
+    if request.GET.get('type') == 'add':
         node_num = 0
         if DEBUG:
             print("\t\t\tFor update_view before add")
@@ -496,8 +496,7 @@ def update_view(request):
              "number_of_nodes": node_num},
             status=status.HTTP_200_OK)
 
-
-    elif str(request.GET.get('type')) == 'remove':
+    elif request.GET.get('type') == 'remove':
         node_num = 0
         # all_nodes.remove(new_ipport)
         AVAILIP[new_ipport] = False
