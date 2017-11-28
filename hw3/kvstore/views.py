@@ -111,7 +111,7 @@ def kvs_response(request, key):
             input_value = request.data['val']
 
             # ERROR HANDLING: EMPTY VALUE or TOO LONG VALUE
-            if 'val' not in request.data or sys.getsizeof(input_value) > 1024 * 1024 * 256:
+            if 'val' not in request.data or sys.getsizeof(input_value) > 1048576: # 1MB in bytes.
                 return Response({'result': 'error', 'msg': 'No value provided'}, status=status.HTTP_400_BAD_REQUEST)
             # Maybe comment this out b/c causal payload can be '' in case if no reads have happened yet?
             if 'causal_payload' not in request.data:
