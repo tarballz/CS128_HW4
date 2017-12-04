@@ -1,6 +1,5 @@
 import sys
 import os
-import re
 import collections
 import time
 from rest_framework.response import Response
@@ -8,6 +7,7 @@ from rest_framework.decorators import api_view
 from rest_framework import status
 from .models import Entry
 import requests as req
+import hashlib
 
 def chunk_list(l, n):
     for i in range(0, len(l), n):
@@ -269,7 +269,7 @@ def kvs_response(request, key):
                         return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
                                         status=status.HTTP_406_NOT_ACCEPTABLE)
                 else:
-                    return Response({'msg': 'hashed key is not in my range...'},
+                    return Response({'msg': 'hashed key is not in my range.', 'my_upper_bound': my_upper_bound},
                                 status=status.HTTP_412_PRECONDITION_FAILED)
 
 
@@ -343,7 +343,7 @@ def kvs_response(request, key):
                                                                           'timestamp': new_timestamp})
                         return Response(
                             {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
-                             "timestamp": new_timestamp}, status=205)  # status.HTTP_201_CREATED
+                             "timestamp": new_timestamp, "my_upper_bound": my_upper_bound}, status=205)  # status.HTTP_201_CREATED
 
                     # USER HAS DONE READS BEFORE
                     else:
@@ -392,7 +392,7 @@ def kvs_response(request, key):
                             return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
                                             status=status.HTTP_406_NOT_ACCEPTABLE)
                 else:
-                    return Response({'msg': 'hashed kay is not in my range...'}, status=status.HTTP_412_PRECONDITION_FAILED)
+                    return Response({'msg': 'hashed kay is not in my range.', 'my_upper_bound': my_upper_bound}, status=status.HTTP_412_PRECONDITION_FAILED)
 
         # MAIN GET
         elif method == 'GET':
@@ -669,6 +669,8 @@ def laziest_node(r_nodes):
 #    return hash(str) % num_groups
 
 def seeded_hash(str):
-    return hash(str) % MAX_HASH_NUM
+    str = str.encode('utf-8')
+    return int(hashlib.sha1(str).hexdigest(), 16) % MAX_HASH_NUM
+    #return hash(str) % MAX_HASH_NUM
 
 
