@@ -76,6 +76,15 @@ def chunk_assign():
     global upper_bound
     global my_upper_bound
     global lower_bound
+    global step
+    global num_groups
+    global chunked
+    global all_nodes
+
+    num_groups = len(all_nodes) // K
+    step = (MAX_HASH_NUM // num_groups)
+    upper_bound = step
+    chunked = chunk_list(all_nodes, K)
 
     for chunk in chunked:
         if DEBUG:
@@ -157,6 +166,7 @@ def kvs_response(request, key):
     method = request.method
     existing_entry = None
     existing_timestamp = None
+    global current_vc
 
     # MAIN RESPONSE
     if is_replica():
@@ -457,6 +467,7 @@ def kvs_response(request, key):
 
 
 def broadcast(key, value, cp, node_id, timestamp, is_GET_broadcast):
+    global AVAILIP
     for k in AVAILIP:
         # IF THE NODE IS UP, AND THE NODE IS NOT ME, AND WE'RE IN THE SAME GROUP
         if AVAILIP[k] and k != IPPORT:
@@ -496,6 +507,7 @@ def i_should_store(key):
 
 # Gross-ass way to update current_vc
 def update_current_vc(new_cp):
+    global current_vc
     # Need to cast new_cp to an int list to I can increment it's elements.
     new_cp = list(map(int, new_cp))
     i = 0
@@ -509,6 +521,7 @@ def update_current_vc(new_cp):
 
 # Gross-ass way to update current_vc
 def update_current_vc_client(new_cp):
+    global current_vc
     # Need to cast new_cp to an int list to I can increment it's elements.
     new_cp = list(map(int, new_cp))
     i = 0
@@ -523,7 +536,8 @@ def update_current_vc_client(new_cp):
 
 
 def ping_nodes():
-    for k in all_nodes:
+    global AVAILIP
+    for k in AVAILIP:
         if repr(k) != IPPORT:
             if DEBUG:
                 print("pinging %s" % (k))
@@ -554,10 +568,17 @@ def ping_nodes():
 
 @api_view(['PUT'])
 def update_view(request):
+    global replica_nodes
+    global proxy_nodes
+    global all_nodes
+    global current_vc
+    global AVAILIP
+
     new_ipport = request.data['ip_port']
     # ping_nodes()
     node_num = 0
     # print("TYPE IS: %s" % (str(request.GET.get('type'))))
+    # TODO: Call update_view_pusher(new_ip) somewhere clever.
 
     if request.GET.get('type') == 'add':
         node_num = 0
@@ -605,7 +626,6 @@ def update_view(request):
              "number_of_nodes": node_num},
             status=status.HTTP_200_OK)
 
-
     elif request.GET.get('type') == 'remove':
         node_num = 0
         # all_nodes.remove(new_ipport)
@@ -632,7 +652,7 @@ def update_view(request):
             proxy_nodes.remove(new_ipport)
 
         for k in AVAILIP:
-            if AVAILIP[k] is True:
+            if AVAILIP[k]:
                 node_num += 1
 
         return Response(
@@ -643,6 +663,25 @@ def update_view(request):
     return Response({'result': 'error', 'msg': 'key value store is not available'},
                     status=status.HTTP_501_NOT_IMPLEMENTED)
 
+def update_view_pusher(cond, new_ip):
+    for dest_node in all_nodes:
+        if dest_node != IPPORT:
+            url_str = 'http://' + dest_node + '/kv-store/update_view_receiver'
+            try:
+                res = req.put(url=url_str, data={'type': cond,
+                                                 'AN': all_nodes,
+                                                 'AIP': AVAILIP,
+                                                 'GSL': groups_sorted_list})
+                #response = Response(res.json())
+                #response.status_code = res.status_code
+            except Exception:
+                continue
+                #AVAILIP[dest_node] = False
+                #return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
+
+@api_view(['PUT'])
+def update_view_receiver(request):
+    pass
 
 @api_view(['GET'])
 def check_nodes(request):
