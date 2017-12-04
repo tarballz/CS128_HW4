@@ -15,7 +15,7 @@ def chunk_list(l, n):
 
 # SET DEBUG TO True  IF YOU'RE WORKING LOCALLY
 # SET DEBUG TO False IF YOU'RE WORKING THROUGH DOCKER
-DEBUG = True
+DEBUG = False
 
 # Environment variables.
 K = int(os.getenv('K', 2))
@@ -82,7 +82,8 @@ def chunk_assign():
             print("chunk: %s" % (chunk))
         # if the current list is comprised of enough nodes
         # to be considered a fully functional group
-        if len(chunk) >= K:
+        #if len(chunk) >= K:
+        if len(chunk) == K:
             # we associate the list of IPPORTS with an upper bound
             groups_dict[upper_bound] = chunk
             # for each IPPORT in list
@@ -117,6 +118,9 @@ if MAX_HASH_NUM > upper_bound:
 
 # list of our group_dict sorted by the keys -- (key = upper bound) --
 groups_sorted_list = [(k, groups_dict[k]) for k in sorted(groups_dict, key=int)]
+
+if DEBUG:
+    print("g_s_l: %s" % (groups_sorted_list))
 
 for node in replica_nodes:
     current_vc[node] = 0
@@ -392,7 +396,8 @@ def kvs_response(request, key):
                             return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
                                             status=status.HTTP_406_NOT_ACCEPTABLE)
                 else:
-                    return Response({'msg': 'hashed kay is not in my range.', 'my_upper_bound': my_upper_bound}, status=status.HTTP_412_PRECONDITION_FAILED)
+                    return selective_broadcast(key, input_value, incoming_cp)
+                    #return Response({'msg': 'hashed key is not in my range.', 'my_upper_bound': my_upper_bound}, status=status.HTTP_412_PRECONDITION_FAILED)
 
         # MAIN GET
         elif method == 'GET':
@@ -464,6 +469,23 @@ def broadcast(key, value, cp, node_id, timestamp, is_GET_broadcast):
                                            'is_GET_broadcast': is_GET_broadcast}, timeout=0.5)
             except:
                 AVAILIP[k] = False
+
+def selective_broadcast(key, value, cp):
+    sh = seeded_hash(key)
+    for k,v in groups_sorted_list:
+        if sh <= k:
+            for dest_node in v:
+                try:
+                    url_str = 'http://' + dest_node + '/kv-store/' + key
+                    res = req.put(url=url_str, data={'val': value,
+                                                     'causal_payload': cp}, timeout=0.5)
+                    response = Response(res.json())
+                    response.status_code = res.status_code
+                    return response
+                except Exception:
+                    AVAILIP[dest_node] = False
+                    continue
+
 
 def i_should_store(key):
     sh = seeded_hash(key)
