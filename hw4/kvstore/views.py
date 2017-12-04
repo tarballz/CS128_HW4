@@ -15,14 +15,14 @@ def chunk_list(l, n):
 
 # SET DEBUG TO True  IF YOU'RE WORKING LOCALLY
 # SET DEBUG TO False IF YOU'RE WORKING THROUGH DOCKER
-DEBUG = False
+DEBUG = True
 
 # Environment variables.
-K = int(os.getenv('K', 3))
+K = int(os.getenv('K', 2))
 VIEW = os.getenv('VIEW', "0.0.0.0:8080,10.0.0.20:8080,10.0.0.21:8080,10.0.0.22:8080")
 if DEBUG:
     print("VIEW is of type: %s" % (type(VIEW)))
-IPPORT = os.getenv('IPPORT', None)
+IPPORT = os.getenv('IPPORT', '0.0.0.0:8080')
 current_vc = collections.OrderedDict()
 # AVAILIP = nodes that are up.
 AVAILIP = {}
@@ -31,9 +31,6 @@ all_nodes = []
 replica_nodes = []
 proxy_nodes = []
 degraded_mode = False
-
-# if IPPORT != "0.0.0.0":
-#     IP = IPPORT.split(':')[0]
 
 if DEBUG:
     # This is just for testing locally.
@@ -48,11 +45,7 @@ if not DEBUG:
 if DEBUG:
     print("all_nodes: %s" % (all_nodes))
     print("len of all_n: %d" % (len(all_nodes)))
-
-if DEBUG:
     print(list(current_vc.values()))
-
-if DEBUG:
     print("proxy_nodes: %s" % (proxy_nodes))
     print("len of prox_n: %d" % (len(proxy_nodes)))
     print("replica_nodes: %s" % (replica_nodes))
@@ -69,36 +62,65 @@ MAX_HASH_NUM = BASE**9
 
 
 groups_dict = {}
-
-upper_bound = (MAX_HASH_NUM // num_groups)
+# range of accepted hashed keys for a group
+step = (MAX_HASH_NUM // num_groups)
+# initial upper
+upper_bound = step
+# list of lists of nodes and proxies
 chunked = chunk_list(all_nodes, K)
-
 my_upper_bound = -1
+lower_bound = -1
 
-for chunk in chunked:
-    if len(chunk) >= K:
-        groups_dict[upper_bound] = chunk
-        for node in chunk:
-            if IPPORT == node:
-                my_upper_bound = upper_bound
-            replica_nodes.append(node)
-        upper_bound += (MAX_HASH_NUM // num_groups)
-    else:
-        for node in chunk:
-            proxy_nodes.append(node)
+# for each list of nodes in our list of lists of IPPORTS
+def chunk_assign():
+    global upper_bound
+    global my_upper_bound
+    global lower_bound
 
+    for chunk in chunked:
+        if DEBUG:
+            print("chunk: %s" % (chunk))
+        # if the current list is comprised of enough nodes
+        # to be considered a fully functional group
+        if len(chunk) >= K:
+            # we associate the list of IPPORTS with an upper bound
+            groups_dict[upper_bound] = chunk
+            # for each IPPORT in list
+            for node in chunk:
+                # if node is myself
+                if IPPORT == node:
+                    if DEBUG:
+                        print("found myself.")
+                    # i set my upper bound
+                    my_upper_bound = upper_bound
+                    if DEBUG:
+                        print("my_upper_bound: %s" % (my_upper_bound))
+                        print("lower_bound: %s" % (lower_bound))
+                    # Need this to confirm a key is within our range, and not JUST less than our value.
+                    lower_bound = upper_bound - step
+                # add node to our view
+                replica_nodes.append(node)
+            # increment the upper range for the next cluster of IPPORTS
+            upper_bound += step
+        else:
+            # list of IPPORTS is not long enough to be a full cluster
+            for node in chunk:
+                # so we add them the our proxies
+                proxy_nodes.append(node)
+chunk_assign()
+
+
+# take care of inconsistent max allowable hash
+# that way a key doesn't get hashed out of range
 if MAX_HASH_NUM > upper_bound:
     MAX_HASH_NUM = upper_bound
 
+# list of our group_dict sorted by the keys -- (key = upper bound) --
 groups_sorted_list = [(k, groups_dict[k]) for k in sorted(groups_dict, key=int)]
 
-# I think this can be replica_nodes and not
-# all nodes b/c only the client is going to
-# interacting with a proxy.
 for node in replica_nodes:
     current_vc[node] = 0
     AVAILIP[node] = True
-
 
 def is_replica():
     return (IPPORT in replica_nodes)
@@ -167,87 +189,93 @@ def kvs_response(request, key):
 
                 cp_list = incoming_cp.split('.')
 
-                if is_GET_broadcast == 1:
-                    try:
-                        existing_entry = Entry.objects.get(key=key)
-                        my_cp = str(existing_entry.causal_payload).split('.')
-                        my_timestamp = int(existing_entry.timestamp)
-                        # Incoming cp > my cp
-                        if (compare_vc(cp_list, my_cp) == 1) or (
-                                    (compare_vc(cp_list, my_cp) == 0) and (incoming_timestamp >= my_timestamp)):
-                            update_current_vc(cp_list)
+                if i_should_store(key):
+                    if is_GET_broadcast == 1:
+                        try:
+                            existing_entry = Entry.objects.get(key=key)
+                            my_cp = str(existing_entry.causal_payload).split('.')
+                            my_timestamp = int(existing_entry.timestamp)
+                            # Incoming cp > my cp
+                            if (compare_vc(cp_list, my_cp) == 1) or (
+                                        (compare_vc(cp_list, my_cp) == 0) and (incoming_timestamp >= my_timestamp)):
+                                update_current_vc(cp_list)
+                                Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                                  'causal_payload': incoming_cp,
+                                                                                  'node_id': incoming_node_id,
+                                                                                  'timestamp': incoming_timestamp})
+                                return Response({'result': 'Success', 'msg': 'Replaced'},
+                                                status=status.HTTP_202_ACCEPTED)
+                            else:
+                                return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                                status=status.HTTP_406_NOT_ACCEPTABLE)
+
+
+                        except:
+                            # FAILURE: KEY DOES NOT EXIST
+                            # CREATE ENTRY IN OUR DB SINCE THE ENTRY DOESN'T EXIST.
                             Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
                                                                               'causal_payload': incoming_cp,
                                                                               'node_id': incoming_node_id,
                                                                               'timestamp': incoming_timestamp})
-                            return Response({'result': 'Success', 'msg': 'Replaced'},
-                                            status=status.HTTP_202_ACCEPTED)
+                            return Response({'result': 'Success', 'msg': 'Key does not exist'},
+                                            status=status.HTTP_201_CREATED)
+
+                    # NOT A GET BROADCAST, SO HANDLE THE PUT NORMALLY.
+                    # IF INCOMING_CP > CURRENT_VC
+                    elif compare_vc(cp_list, list(current_vc.values())) == 1:
+                        update_current_vc(cp_list)
+                        Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                          'causal_payload': incoming_cp,
+                                                                          'node_id': incoming_node_id,
+                                                                          'timestamp': incoming_timestamp})
+                        return Response(
+                            {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
+                             "causal_payload": incoming_cp,
+                             "timestamp": incoming_timestamp}, status=203)  # status.HTTP_200_OK
+
+                    elif compare_vc(cp_list, list(current_vc.values())) == 0:
+                        new_entry = False
+                        try:
+                            existing_entry = Entry.objects.get(key=key)
+                        except:
+                            new_entry = True
+                        if new_entry:
+                            # FAILURE: KEY DOES NOT EXIST
+                            # CREATE ENTRY IN OUR DB SINCE THE ENTRY DOESN'T EXIST.
+                            Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                              'causal_payload': incoming_cp,
+                                                                              'node_id': incoming_node_id,
+                                                                              'timestamp': incoming_timestamp})
+                            return Response({'result': 'Success', 'msg': 'Key does not exist'},
+                                            status=204)  # status.HTTP_201_CREATED
+                        # IF WE'VE GOTTEN HERE, KEY EXISTS
                         else:
-                            return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
-                                            status=status.HTTP_406_NOT_ACCEPTABLE)
+                            if incoming_timestamp > existing_entry.timestamp:
+                                Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
+                                                                                  'causal_payload': incoming_cp,
+                                                                                  'node_id': incoming_node_id,
+                                                                                  'timestamp': incoming_timestamp})
+                                return Response(
+                                    {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
+                                     "causal_payload": incoming_cp,
+                                     "timestamp": incoming_timestamp}, status=status.HTTP_200_OK)
+                            else:
+                                return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                                status=status.HTTP_406_NOT_ACCEPTABLE)
 
-
-                    except:
-                        # FAILURE: KEY DOES NOT EXIST
-                        # CREATE ENTRY IN OUR DB SINCE THE ENTRY DOESN'T EXIST.
-                        Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
-                                                                          'causal_payload': incoming_cp,
-                                                                          'node_id': incoming_node_id,
-                                                                          'timestamp': incoming_timestamp})
-                        return Response({'result': 'Success', 'msg': 'Key does not exist'},
-                                        status=status.HTTP_201_CREATED)
-
-                # NOT A GET BROADCAST, SO HANDLE THE PUT NORMALLY.
-                # IF INCOMING_CP > CURRENT_VC
-                elif compare_vc(cp_list, list(current_vc.values())) == 1:
-                    update_current_vc(cp_list)
-                    Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
-                                                                      'causal_payload': incoming_cp,
-                                                                      'node_id': incoming_node_id,
-                                                                      'timestamp': incoming_timestamp})
-                    return Response(
-                        {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
-                         "causal_payload": incoming_cp,
-                         "timestamp": incoming_timestamp}, status=203)  # status.HTTP_200_OK
-
-                elif compare_vc(cp_list, list(current_vc.values())) == 0:
-                    new_entry = False
-                    try:
-                        existing_entry = Entry.objects.get(key=key)
-                    except:
-                        new_entry = True
-                    if new_entry:
-                        # FAILURE: KEY DOES NOT EXIST
-                        # CREATE ENTRY IN OUR DB SINCE THE ENTRY DOESN'T EXIST.
-                        Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
-                                                                          'causal_payload': incoming_cp,
-                                                                          'node_id': incoming_node_id,
-                                                                          'timestamp': incoming_timestamp})
-                        return Response({'result': 'Success', 'msg': 'Key does not exist'},
-                                        status=204)  # status.HTTP_201_CREATED
-                    # IF WE'VE GOTTEN HERE, KEY EXISTS
+                    # IF INCOMONG_CP < CURRENT_VC
+                    # elif compare_vc(cp_list, list(current_vc.values())) == -1:
                     else:
-                        if incoming_timestamp > existing_entry.timestamp:
-                            Entry.objects.update_or_create(key=key, defaults={'val': incoming_value,
-                                                                              'causal_payload': incoming_cp,
-                                                                              'node_id': incoming_node_id,
-                                                                              'timestamp': incoming_timestamp})
-                            return Response(
-                                {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
-                                 "causal_payload": incoming_cp,
-                                 "timestamp": incoming_timestamp}, status=status.HTTP_200_OK)
-                        else:
-                            return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
-                                            status=status.HTTP_406_NOT_ACCEPTABLE)
-
-                # IF INCOMONG_CP < CURRENT_VC
-                # elif compare_vc(cp_list, list(current_vc.values())) == -1:
+                        return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                        status=status.HTTP_406_NOT_ACCEPTABLE)
                 else:
-                    return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
-                                    status=status.HTTP_406_NOT_ACCEPTABLE)
+                    return Response({'msg': 'hashed key is not in my range...'},
+                                status=status.HTTP_412_PRECONDITION_FAILED)
 
 
+            # =====================================================
             # IF NO TIMESTAMP, WE KNOW THIS PUT IS FROM THE CLIENT.
+            # =====================================================
             else:
                 incoming_cp = str(request.data['causal_payload'])
                 node_id = list(current_vc.keys()).index(IPPORT)
@@ -257,113 +285,114 @@ def kvs_response(request, key):
                     print("incoming_cp_CLIENT: %s" % (incoming_cp))
                     print(len(incoming_cp))
 
-                # FIRST ATTEMPT AT MAPPING A KEY TO A GROUP, AND FORWARDING IF THE HASHED KEY DOES NOT
-                # MATCH OUR GROUP.
-                # if key_to_group_hash(key) != groups_dict[IPPORT]:
-                #     for k in groups_dict:
-                #         url_str = 'http://' + k + '/kv-store/' + key
-                #         try:
-                #             # ACT AS A PSEUDO-PROXY.
-                #             res = req.put(url=url_str, data={'val': input_value,
-                #                                              'causal_payload': incoming_cp,
-                #                                              'timestamp': new_timestamp}, timeout=0.5)
-                #             response = Response(res.json())
-                #             response.status_code = res.status_code
-                #             return response
-                #         except:
-                #             continue
-                # else:
-                #     broadcast(key, input_value, incoming_cp, node_id, new_timestamp, 0)
-                #     Entry.objects.update_or_create(key=key, defaults={'val': input_value,
-                #                                                       'causal_payload': incoming_cp,
-                #                                                       'node_id': node_id,
-                #                                                       'timestamp': new_timestamp})
-                #     return Response(
-                #         {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
-                #          "timestamp": new_timestamp}, status=209)  # status.HTTP_201_CREATED
-                # # END ATTEMPT.
-
-
+                    # FIRST ATTEMPT AT MAPPING A KEY TO A GROUP, AND FORWARDING IF THE HASHED KEY DOES NOT
+                    # MATCH OUR GROUP.
+                    # if key_to_group_hash(key) != groups_dict[IPPORT]:
+                    #     for k in groups_dict:
+                    #         url_str = 'http://' + k + '/kv-store/' + key
+                    #         try:
+                    #             # ACT AS A PSEUDO-PROXY.
+                    #             res = req.put(url=url_str, data={'val': input_value,
+                    #                                              'causal_payload': incoming_cp,
+                    #                                              'timestamp': new_timestamp}, timeout=0.5)
+                    #             response = Response(res.json())
+                    #             response.status_code = res.status_code
+                    #             return response
+                    #         except:
+                    #             continue
+                    # else:
+                    #     broadcast(key, input_value, incoming_cp, node_id, new_timestamp, 0)
+                    #     Entry.objects.update_or_create(key=key, defaults={'val': input_value,
+                    #                                                       'causal_payload': incoming_cp,
+                    #                                                       'node_id': node_id,
+                    #                                                       'timestamp': new_timestamp})
+                    #     return Response(
+                    #         {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
+                    #          "timestamp": new_timestamp}, status=209)  # status.HTTP_201_CREATED
+                    # # END ATTEMPT.
+                # CHECK IF WE WANT TO CREATE AN ENTRY AND STORE IN DB
+                if i_should_store(key):
                     # len(causal_payload) == 0 if the user hasn't done ANY reads yet.
-                if len(incoming_cp) <= 2:
-                    incoming_cp = ''
-                    if DEBUG:
-                        print("init triggered")
-                    # Initialize vector clock.
-                    for k, v in current_vc.items():
-                        if AVAILIP[k]:
-                            # incoming_cp += str(v) + '.'
-                            # INCREMENT OUR LOCATION IN THE CP
-                            if IPPORT == str(k):
-                                v += 1
-                            # BUILD INCOMING_CP SINCE WE'RE NOT PROVIDED ONE
-                            incoming_cp += ''.join([str(v), '.'])
-
-                    # STRIP LAST PERIOD FROM INCOMING CP
-                    incoming_cp = incoming_cp.rstrip('.')
-
-                    if DEBUG:
-                        print("zero icp: %s" % (incoming_cp))
-
-                    if not DEBUG:
-                        # ping_nodes()
-                        broadcast(key, input_value, incoming_cp, node_id, new_timestamp, 0)
-
-                    Entry.objects.update_or_create(key=key, defaults={'val': input_value,
-                                                                      'causal_payload': incoming_cp,
-                                                                      'node_id': node_id,
-                                                                      'timestamp': new_timestamp})
-                    return Response(
-                        {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
-                         "timestamp": new_timestamp}, status=205)  # status.HTTP_201_CREATED
-
-                # USER HAS DONE READS BEFORE
-                else:
-                    cp_list = incoming_cp.split('.')
-                    # Need to do a GET to either compare values or confirm this entry is being
-                    # entered for the first time.
-                    existing_entry = None
-                    try:
-                        existing_entry = Entry.objects.get(key=key)
-                        # existing_entry = Entry.objects.latest('timestamp')
-                        # existing_timestamp = existing_entry.timestamp
-                    except:
-                        new_entry = True
-
-                    if DEBUG:
-                        print("EXISTING ENTRY: ", existing_entry)
-
-                    if not DEBUG:
-                        # ping_nodes()
-                        broadcast(key, input_value, incoming_cp, node_id, new_timestamp, 0)
-
-                    # if causal_payload > current_vc
-                    # I SET THIS TO BE "> -1" B/C IT DOES NOT MATTER IF VCS ARE THE SAME B/C CLIENT WILL NOT PASS A TIMESTAMP
-                    if compare_vc(cp_list, list(current_vc.values())) > -1:
-                        # print ("OLD VC: %s" % (current_vc))
-                        update_current_vc_client(cp_list)
-                        incoming_cp = '.'.join(list(map(str, current_vc.values())))
+                    if len(incoming_cp) <= 2:
+                        incoming_cp = ''
                         if DEBUG:
-                            print("cp_list: %s" % (cp_list))
-                            for i in cp_list:
-                                print("type: %s" % (type(i)))
-                            print("incoming_cp: %s" % (incoming_cp))
+                            print("init triggered")
+                        # Initialize vector clock.
+                        for k, v in current_vc.items():
+                            if AVAILIP[k]:
+                                # incoming_cp += str(v) + '.'
+                                # INCREMENT OUR LOCATION IN THE CP
+                                if IPPORT == str(k):
+                                    v += 1
+                                # BUILD INCOMING_CP SINCE WE'RE NOT PROVIDED ONE
+                                incoming_cp += ''.join([str(v), '.'])
+
+                        # STRIP LAST PERIOD FROM INCOMING CP
+                        incoming_cp = incoming_cp.rstrip('.')
+
+                        if DEBUG:
+                            print("zero icp: %s" % (incoming_cp))
+
+                        if not DEBUG:
+                            # ping_nodes()
+                            broadcast(key, input_value, incoming_cp, node_id, new_timestamp, 0)
 
                         Entry.objects.update_or_create(key=key, defaults={'val': input_value,
                                                                           'causal_payload': incoming_cp,
                                                                           'node_id': node_id,
                                                                           'timestamp': new_timestamp})
                         return Response(
-                            {'result': 'success', "value": input_value, "node_id": node_id,
-                             "causal_payload": incoming_cp,
-                             "timestamp": new_timestamp}, status=206)  # status.HTTP_200_OK
+                            {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
+                             "timestamp": new_timestamp}, status=205)  # status.HTTP_201_CREATED
 
-
-                    # causal payload < current_vc
+                    # USER HAS DONE READS BEFORE
                     else:
-                        return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
-                                        status=status.HTTP_406_NOT_ACCEPTABLE)
+                        cp_list = incoming_cp.split('.')
+                        # Need to do a GET to either compare values or confirm this entry is being
+                        # entered for the first time.
+                        existing_entry = None
+                        try:
+                            existing_entry = Entry.objects.get(key=key)
+                            # existing_entry = Entry.objects.latest('timestamp')
+                            # existing_timestamp = existing_entry.timestamp
+                        except:
+                            new_entry = True
 
+                        if DEBUG:
+                            print("EXISTING ENTRY: ", existing_entry)
+
+                        if not DEBUG:
+                            # ping_nodes()
+                            broadcast(key, input_value, incoming_cp, node_id, new_timestamp, 0)
+
+                        # if causal_payload > current_vc
+                        # I SET THIS TO BE "> -1" B/C IT DOES NOT MATTER IF VCS ARE THE SAME B/C CLIENT WILL NOT PASS A TIMESTAMP
+                        if compare_vc(cp_list, list(current_vc.values())) > -1:
+                            # print ("OLD VC: %s" % (current_vc))
+                            update_current_vc_client(cp_list)
+                            incoming_cp = '.'.join(list(map(str, current_vc.values())))
+                            if DEBUG:
+                                print("cp_list: %s" % (cp_list))
+                                for i in cp_list:
+                                    print("type: %s" % (type(i)))
+                                print("incoming_cp: %s" % (incoming_cp))
+
+                            Entry.objects.update_or_create(key=key, defaults={'val': input_value,
+                                                                              'causal_payload': incoming_cp,
+                                                                              'node_id': node_id,
+                                                                              'timestamp': new_timestamp})
+                            return Response(
+                                {'result': 'success', "value": input_value, "node_id": node_id,
+                                 "causal_payload": incoming_cp,
+                                 "timestamp": new_timestamp}, status=206)  # status.HTTP_200_OK
+
+
+                        # causal payload < current_vc
+                        else:
+                            return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                            status=status.HTTP_406_NOT_ACCEPTABLE)
+                else:
+                    return Response({'msg': 'hashed kay is not in my range...'}, status=status.HTTP_412_PRECONDITION_FAILED)
 
         # MAIN GET
         elif method == 'GET':
@@ -436,6 +465,12 @@ def broadcast(key, value, cp, node_id, timestamp, is_GET_broadcast):
             except:
                 AVAILIP[k] = False
 
+def i_should_store(key):
+    sh = seeded_hash(key)
+    if DEBUG:
+        print("hashed key: %s" % (sh))
+        print("my_ub: %s" % (my_upper_bound))
+    return (sh > lower_bound and sh <= my_upper_bound)
 
 # Gross-ass way to update current_vc
 def update_current_vc(new_cp):
@@ -531,11 +566,6 @@ def update_view(request):
                 print("K = %d \t len(r_n) = %d" % (K, len(replica_nodes)))
                 print("APPENDING %s onto proxy_nodes" % (new_ipport))
             proxy_nodes.append(new_ipport)
-            if new_ipport not in current_vc:
-                if DEBUG:
-                    print("Never seen %s before. Appending %s to current_vc (AKA global vc)" % (new_ipport, new_ipport))
-                # Init new entry into our dictionary.
-                current_vc.update({new_ipport: 0})
             degraded_mode = False
         if DEBUG:
             print("\t\t\tFor update_view after add")
@@ -545,7 +575,7 @@ def update_view(request):
             print("len of rep_n: %d" % (len(replica_nodes)))
 
         for k in AVAILIP:
-            if AVAILIP[k] is True:
+            if AVAILIP[k]:
                 node_num += 1
 
         return Response(
