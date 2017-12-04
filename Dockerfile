@@ -10,4 +10,4 @@ EXPOSE 8080
 WORKDIR /hw4
 RUN ["python3", "manage.py", "makemigrations"]
 RUN ["python3", "manage.py", "migrate"]
-CMD ["PYTHONHASHSEED=0", "python3", "manage.py", "runserver", "0.0.0.0:8080"]
+CMD ["python3", "manage.py", "runserver", "0.0.0.0:8080"]
