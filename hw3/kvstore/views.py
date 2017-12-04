@@ -9,6 +9,10 @@ from rest_framework import status
 from .models import Entry
 import requests as req
 
+def chunk_list(l, n):
+    for i in range(0, len(l), n):
+        yield l[i:i + n]
+
 # SET DEBUG TO True  IF YOU'RE WORKING LOCALLY
 # SET DEBUG TO False IF YOU'RE WORKING THROUGH DOCKER
 DEBUG = False
@@ -54,20 +58,39 @@ if DEBUG:
     print("replica_nodes: %s" % (replica_nodes))
     print("len of rep_n: %d" % (len(replica_nodes)))
 
+
 # INITIAL NUMBER OF PARTITIONS
 num_groups = len(all_nodes) // K  # Integer division.
 num_replicas = len(all_nodes) - (len(all_nodes) % K)
+BASE = 2
+#POWER = 9
+#POWER = num_groups**2
+MAX_HASH_NUM = BASE**9
 
-groups = {}
-# SET UP REPLICA_NODES AND PROXY_NODES
-r_count = 0
-for node in all_nodes:
-    if r_count > num_replicas:
-        proxy_nodes.append(node)
+
+groups_dict = {}
+
+upper_bound = (MAX_HASH_NUM // num_groups)
+chunked = chunk_list(all_nodes, K)
+
+my_upper_bound = -1
+
+for chunk in chunked:
+    if len(chunk) >= K:
+        groups_dict[upper_bound] = chunk
+        for node in chunk:
+            if IPPORT == node:
+                my_upper_bound = upper_bound
+            replica_nodes.append(node)
+        upper_bound += (MAX_HASH_NUM // num_groups)
     else:
-        groups[node] = r_count % num_groups
-    r_count += 1
-replica_nodes = groups.keys()
+        for node in chunk:
+            proxy_nodes.append(node)
+
+if MAX_HASH_NUM > upper_bound:
+    MAX_HASH_NUM = upper_bound
+
+groups_sorted_list = [(k, groups_dict[k]) for k in sorted(groups_dict, key=int)]
 
 # I think this can be replica_nodes and not
 # all nodes b/c only the client is going to
@@ -234,32 +257,31 @@ def kvs_response(request, key):
                     print("incoming_cp_CLIENT: %s" % (incoming_cp))
                     print(len(incoming_cp))
 
-                # FIRST ATTEMPT AT MAPPING A KEY TO A GROUP, AND FORWARDING IF THE HASHED KEY DOES NOT 
+                # FIRST ATTEMPT AT MAPPING A KEY TO A GROUP, AND FORWARDING IF THE HASHED KEY DOES NOT
                 # MATCH OUR GROUP.
-                if key_to_group_hash(key) != groups[IPPORT]:
-                    for k in groups:
-                        if groups[k] == key_to_group_hash(key):
-                            url_str = 'http://' + k + '/kv-store/' + key
-                            try:
-                                # ACT AS A PSEUDO-PROXY.
-                                res = req.put(url=url_str, data={'val': input_value,
-                                                                 'causal_payload': incoming_cp,
-                                                                 'timestamp': new_timestamp}, timeout=0.5)
-                                response = Response(res.json())
-                                response.status_code = res.status_code
-                                return response
-                            except:
-                                continue
-                else:
-                    broadcast(key, input_value, incoming_cp, node_id, new_timestamp, 0)
-                    Entry.objects.update_or_create(key=key, defaults={'val': input_value,
-                                                                      'causal_payload': incoming_cp,
-                                                                      'node_id': node_id,
-                                                                      'timestamp': new_timestamp})
-                    return Response(
-                        {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
-                         "timestamp": new_timestamp}, status=209)  # status.HTTP_201_CREATED
-                # END ATTEMPT.
+                # if key_to_group_hash(key) != groups_dict[IPPORT]:
+                #     for k in groups_dict:
+                #         url_str = 'http://' + k + '/kv-store/' + key
+                #         try:
+                #             # ACT AS A PSEUDO-PROXY.
+                #             res = req.put(url=url_str, data={'val': input_value,
+                #                                              'causal_payload': incoming_cp,
+                #                                              'timestamp': new_timestamp}, timeout=0.5)
+                #             response = Response(res.json())
+                #             response.status_code = res.status_code
+                #             return response
+                #         except:
+                #             continue
+                # else:
+                #     broadcast(key, input_value, incoming_cp, node_id, new_timestamp, 0)
+                #     Entry.objects.update_or_create(key=key, defaults={'val': input_value,
+                #                                                       'causal_payload': incoming_cp,
+                #                                                       'node_id': node_id,
+                #                                                       'timestamp': new_timestamp})
+                #     return Response(
+                #         {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
+                #          "timestamp": new_timestamp}, status=209)  # status.HTTP_201_CREATED
+                # # END ATTEMPT.
 
 
                     # len(causal_payload) == 0 if the user hasn't done ANY reads yet.
@@ -403,7 +425,7 @@ def kvs_response(request, key):
 def broadcast(key, value, cp, node_id, timestamp, is_GET_broadcast):
     for k in AVAILIP:
         # IF THE NODE IS UP, AND THE NODE IS NOT ME, AND WE'RE IN THE SAME GROUP
-        if AVAILIP[k] and k != IPPORT and groups[k] == groups[IPPORT]:
+        if AVAILIP[k] and k != IPPORT:
             url_str = 'http://' + k + '/kv-store/' + key
             try:
                 req.put(url=url_str, data={'val': value,
@@ -613,5 +635,10 @@ def laziest_node(r_nodes):
     return min(r_nodes.items(), key=lambda x: x[1])[0]
 
 
-def key_to_group_hash(str):
-    return hash(str) % num_groups
+#def key_to_group_hash(str):
+#    return hash(str) % num_groups
+
+def seeded_hash(str):
+    return hash(str) % MAX_HASH_NUM
+
+

@@ -173,8 +173,8 @@ def split(pattern, string, maxsplit=0, flags=0):
 def findall(pattern, string, flags=0):
     """Return a list of all non-overlapping matches in the string.
 
-    If one or more groups are present in the pattern, return a
-    list of groups; this will be a list of tuples if the pattern
+    If one or more groups_dict are present in the pattern, return a
+    list of groups_dict; this will be a list of tuples if the pattern
     has more than one group.
 
     Empty matches are included in the result."""
