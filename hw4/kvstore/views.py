@@ -22,7 +22,7 @@ DEBUG = False
 
 # Environment variables.
 K = int(os.getenv('K', 2))
-VIEW = os.getenv('VIEW', "localhost:8080,localhost:8081")
+VIEW = os.getenv('VIEW', "localhost:8080,localhost:8081,localhost:8082")
 if DEBUG:
     print("VIEW is of type: %s" % (type(VIEW)))
 IPPORT = os.getenv('IPPORT', 'localhost:8080')
@@ -101,6 +101,7 @@ def chunk_assign():
     chunked = chunk_list(all_nodes, K)
 
     for chunk in chunked:
+
         if DEBUG:
             print("chunk: %s" % (chunk))
         # if the current list is comprised of enough nodes
@@ -510,28 +511,28 @@ def broadcast(key, value, cp, node_id, timestamp, is_GET_broadcast):
             except:
                 AVAILIP[k] = False
 
-
-def object_broadcast(entry_list):
-    global AVAILIP
-
-    for k in AVAILIP:
-        if AVAILIP[k] and k != IPPORT:
-            url_str = 'http://' + k + '/kv-store/object_broadcast_receive'
-            data = {'entry_list': entry_list}
-            try:
-                res = req.put(url=url_str, json=data, timeout=0.5)
-                response = Response(res.json())
-                response.status_code = res.status_code
-                return response
-            except:
-                AVAILIP[k] = False
-                continue
-    return Response({"msg": "shits fucked"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
+# 
+# def object_broadcast(entry_list):
+#     global AVAILIP
+# 
+#     for k in AVAILIP:
+#         if AVAILIP[k] and k != IPPORT:
+#             url_str = 'http://' + k + '/kv-store/db_broadcast_receive'
+#             data = {'entry_list': entry_list}
+#             try:
+#                 res = req.put(url=url_str, json=data, timeout=0.5)
+#                 response = Response(res.json())
+#                 response.status_code = res.status_code
+#                 return response
+#             except:
+#                 AVAILIP[k] = False
+#                 continue
+#     return Response({"msg": "shits fucked"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+# 
+# 
 
 @api_view(['PUT'])
-def object_broadcast_receive(request):
+def db_broadcast_receive(request):
     try:
         entry_list = request.data['entry_list']
         for entry in entry_list:
@@ -741,17 +742,18 @@ def update_view(request):
 # AND ACCEPT THEM AS THE NEW VIEW-OF-THE-WORLD IN update_view_receiver()
 def update_view_pusher():
     global all_nodes
-    all_nodes = [item.encode('utf-8') for item in all_nodes]
+
+    all_nodes = list(set([item.encode('utf-8') for item in all_nodes]))
     if not DEBUG:
         print(all_nodes)
         for dest_node in all_nodes:
-            print("Sending to : "+ dest_node)
-            if dest_node != IPPORT:
+            if True:
                 url_str = 'http://' + dest_node + '/kv-store/update_view_receiver'
                 data = {'AN': all_nodes,
                         'AIP': AVAILIP,
                         'GSL': groups_sorted_list}
                 try:
+                    print("Sending to : " + dest_node)
                     # HAD TO DO JSON= INSTEAD OF DATA= BC WE'RE PASSING A COMPLICATED STRUCTURE
                     res = req.put(url=url_str, json=data)
                     # response = Response(res.json())
@@ -762,7 +764,7 @@ def update_view_pusher():
                     continue
                     # return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
         for dest_node in all_nodes:
-            url_str = 'http://' + dest_node + '/kv-store/receive_update'
+            url_str = 'http://' + dest_node + '/kv-store/db_broadcast'
             req.put(url=url_str, data=None)
             # TODO: Some kind of prune?
 
@@ -773,7 +775,7 @@ def update_view_pusher():
                 'GSL': groups_sorted_list}
 
         for dest_node in all_nodes:
-            url_str = 'http://' + dest_node + '/kv-store/receive_update'
+            url_str = 'http://' + dest_node + '/kv-store/db_broadcast'
             req.put(url=url_str, data=None)
 
         try:
@@ -792,7 +794,7 @@ def update_view_receiver(request):
     global groups_sorted_list
     global my_upper_bound
     global lower_bound
-    print(" in update view reciever")
+
     try:
         new_all_nodes = request.data['AN']
         new_AVAILIP = request.data['AIP']
@@ -806,8 +808,11 @@ def update_view_receiver(request):
         all_nodes = new_all_nodes
         AVAILIP = new_AVAILIP
         groups_sorted_list = new_gsl
-
-
+        print("IP: "+IPPORT+" GSL : "+ str(groups_sorted_list))
+        print("++++++++++++++++++++")
+        print("PRINTING NEW UPDATE VIEW")
+        print("++++++++++++++++++++")
+        print(str(all_nodes))
         return Response({'msg': 'shits totally not fucked'}, status=200)
 
     except Exception as e:
@@ -822,8 +827,23 @@ def check_nodes(request):
 
 
 @api_view(['PUT'])
-def receive_update(request):
+def db_broadcast(request):
     print("Made it to call broadcast!!!!")
+    global AVAILIP
+    #
+    # for k in AVAILIP:
+    #     if AVAILIP[k] and k != IPPORT:
+    #         url_str = 'http://' + k + '/kv-store/db_broadcast_receive'
+    #         data = {'entry_list': Entry.objects.all()}
+    #         try:
+    #             res = req.put(url=url_str, json=data, timeout=0.5)
+    #             response = Response(res.json())
+    #             response.status_code = res.status_code
+    #             return response
+    #         except:
+    #             AVAILIP[k] = False
+    #             continue
+    # return Response({"msg": "shits fucked"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     #return object_broadcast(Entry.objects.all())
     return Response(
