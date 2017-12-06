@@ -46,7 +46,7 @@ if not DEBUG:
     if ',' in VIEW:
         all_nodes = VIEW.split(',')
     else:
-        all_nodes = [VIEW]
+        all_nodes.append(str(VIEW))
 
 for node in all_nodes:
     current_vc[node] = 0
@@ -66,6 +66,8 @@ num_groups = len(all_nodes) // K  # Integer division.
 if num_groups <= 0:
     num_groups = 1
 num_replicas = len(all_nodes) - (len(all_nodes) % K)
+if num_replicas <= 0:
+    num_replicas = 1
 BASE = 2
 # POWER = 9
 # POWER = num_groups**2
@@ -96,12 +98,13 @@ def chunk_assign():
     global groups_sorted_list
 
     num_groups = len(all_nodes) // K
+    if num_groups <= 0:
+        num_groups = 1
     step = (MAX_HASH_NUM // num_groups)
     upper_bound = step
     chunked = chunk_list(all_nodes, K)
 
     for chunk in chunked:
-
         if DEBUG:
             print("chunk: %s" % (chunk))
         # if the current list is comprised of enough nodes
@@ -743,12 +746,12 @@ def update_view(request):
 def update_view_pusher():
     global all_nodes
 
-    all_nodes = list(set([item.encode('utf-8') for item in all_nodes]))
+    all_nodes = list(set([item for item in all_nodes]))
     if not DEBUG:
         print(all_nodes)
         for dest_node in all_nodes:
             if True:
-                url_str = 'http://' + dest_node + '/kv-store/update_view_receiver'
+                url_str = 'http://' + repr(dest_node) + '/kv-store/update_view_receiver'
                 data = {'AN': all_nodes,
                         'AIP': AVAILIP,
                         'GSL': groups_sorted_list}
@@ -764,7 +767,7 @@ def update_view_pusher():
                     continue
                     # return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
         for dest_node in all_nodes:
-            url_str = 'http://' + dest_node + '/kv-store/db_broadcast'
+            url_str = 'http://' + repr(dest_node) + '/kv-store/db_broadcast'
             req.put(url=url_str, data=None)
             # TODO: Some kind of prune?
 
@@ -775,7 +778,7 @@ def update_view_pusher():
                 'GSL': groups_sorted_list}
 
         for dest_node in all_nodes:
-            url_str = 'http://' + dest_node + '/kv-store/db_broadcast'
+            url_str = 'http://' + repr(dest_node) + '/kv-store/db_broadcast'
             req.put(url=url_str, data=None)
 
         try:
