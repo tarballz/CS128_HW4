@@ -92,6 +92,7 @@ def chunk_assign():
     global num_groups
     global chunked
     global all_nodes
+    global replica_nodes
     global groups_sorted_list
 
     num_groups = len(all_nodes) // K
@@ -133,7 +134,12 @@ def chunk_assign():
 
 
         # list of our group_dict sorted by the keys -- (key = upper bound) --
-        groups_sorted_list = [[k, groups_dict[k]] for k in sorted(groups_dict, key=int)]
+    groups_sorted_list = [[k, groups_dict[k]] for k in sorted(groups_dict, key=int)]
+    for tup in groups_sorted_list:
+        if my_upper_bound == tup[0]:
+            replica_nodes = tup[1]
+            break
+
 
 
 chunk_assign()
@@ -734,9 +740,13 @@ def update_view(request):
 # PACKAGE THEM UP AND SEND THEM TO EVERY NODE.  THESE NODES WILL THEN ACCEPT THESE LISTS
 # AND ACCEPT THEM AS THE NEW VIEW-OF-THE-WORLD IN update_view_receiver()
 def update_view_pusher():
+    global all_nodes
+    all_nodes = [item.encode('utf-8') for item in all_nodes]
     if not DEBUG:
+        print(all_nodes)
         for dest_node in all_nodes:
-            if dest_node != IPPORT and AVAILIP[dest_node]:
+            print("Sending to : "+ dest_node)
+            if dest_node != IPPORT:
                 url_str = 'http://' + dest_node + '/kv-store/update_view_receiver'
                 data = {'AN': all_nodes,
                         'AIP': AVAILIP,
@@ -746,12 +756,13 @@ def update_view_pusher():
                     res = req.put(url=url_str, json=data)
                     # response = Response(res.json())
                     # response.status_code = res.status_code
-                except Exception:
+                except Exception as e:
                     AVAILIP[dest_node] = False
+                    print(e)
                     continue
                     # return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
         for dest_node in all_nodes:
-            url_str = 'http://' + dest_node + '/kv-store/call_broadcast'
+            url_str = 'http://' + dest_node + '/kv-store/receive_update'
             req.put(url=url_str, data=None)
             # TODO: Some kind of prune?
 
@@ -762,7 +773,7 @@ def update_view_pusher():
                 'GSL': groups_sorted_list}
 
         for dest_node in all_nodes:
-            url_str = 'http://' + dest_node + '/kv-store/call_broadcast'
+            url_str = 'http://' + dest_node + '/kv-store/receive_update'
             req.put(url=url_str, data=None)
 
         try:
@@ -781,7 +792,7 @@ def update_view_receiver(request):
     global groups_sorted_list
     global my_upper_bound
     global lower_bound
-
+    print(" in update view reciever")
     try:
         new_all_nodes = request.data['AN']
         new_AVAILIP = request.data['AIP']
@@ -796,9 +807,11 @@ def update_view_receiver(request):
         AVAILIP = new_AVAILIP
         groups_sorted_list = new_gsl
 
+
         return Response({'msg': 'shits totally not fucked'}, status=200)
 
-    except:
+    except Exception as e:
+        print(e)
         return Response({'msg': 'shits fucked'}, status=status.HTTP_451_UNAVAILABLE_FOR_LEGAL_REASONS)
 
 
@@ -809,9 +822,15 @@ def check_nodes(request):
 
 
 @api_view(['PUT'])
-def call_broadcast(request):
-    return object_broadcast(Entry.objects.all())
+def receive_update(request):
+    print("Made it to call broadcast!!!!")
 
+    #return object_broadcast(Entry.objects.all())
+    return Response(
+        {
+            'name':'success'
+        }
+    )
 
 def compare_vc(a, b):
     """

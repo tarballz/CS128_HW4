@@ -10,7 +10,7 @@ urlpatterns = [
     url(r'^kv-store/update-view$', views.update_view),
     url(r'^kv-store/update_view_receiver', views.update_view_receiver),
     url(r'^kv-store/check_nodes', views.check_nodes),
-    url(r'^kv-store/call_broadcast', views.call_broadcast),
+    url(r'^kv-store/receive_update', views.receive_update),
     url(r'^kv-store/(?P<key>[a-zA-Z0-9_]{1,200})$', views.kvs_response),
     url(r'^kv-store/(?P<key>[a-zA-Z0-9_]{201,})$', views.failure),
 ]
