@@ -748,7 +748,7 @@ def update_view_pusher():
         print(all_nodes)
         for dest_node in all_nodes:
             if True:
-                url_str = 'http://' + dest_node + '/kv-store/update_view_receiver'
+                url_str = 'http://' + str(dest_node) + '/kv-store/update_view_receiver'
                 data = {'AN': all_nodes,
                         'AIP': AVAILIP,
                         'GSL': groups_sorted_list}
