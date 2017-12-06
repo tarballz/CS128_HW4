@@ -1,3 +1,4 @@
+
 import sys
 import os
 import collections
@@ -22,6 +23,7 @@ DEBUG = False
 
 # Environment variables.
 K = int(os.getenv('K', 2))
+
 VIEW = os.getenv('VIEW', "localhost:8080,localhost:8081,localhost:8082")
 if DEBUG:
     print("VIEW is of type: %s" % (type(VIEW)))
@@ -182,6 +184,15 @@ def get_node_details(request):
 def get_all_replicas(request):
     return Response({"result": "success", "replicas": replica_nodes}, status=status.HTTP_200_OK)
 
+
+@api_view(['GET'])
+def get_state(request):
+    data= {'IP':IPPORT,
+           'GSL ':str(groups_sorted_list),
+           'ALL NODES':str(all_nodes),
+           'PROXIES':str(proxy_nodes)
+           }
+    return Response(data=data, status=200)
 
 # CORRECT KEYS
 @api_view(['GET', 'PUT'])
@@ -808,10 +819,12 @@ def update_view_receiver(request):
         all_nodes = new_all_nodes
         AVAILIP = new_AVAILIP
         groups_sorted_list = new_gsl
-        print("IP: "+IPPORT+" GSL : "+ str(groups_sorted_list))
+
         print("++++++++++++++++++++")
         print("PRINTING NEW UPDATE VIEW")
         print("++++++++++++++++++++")
+        print("GROUPS")
+        print("IP: " + IPPORT + " GSL : " + str(groups_sorted_list))
         print(str(all_nodes))
         return Response({'msg': 'shits totally not fucked'}, status=200)
 
