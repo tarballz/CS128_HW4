@@ -44,3 +44,8 @@ pipenv shell
 cd to where manage.py is and run 
 ./manage.py runserver
     - This is just for running locally.
+
+To leave pipenv shell:
+    deactivate
+
+
