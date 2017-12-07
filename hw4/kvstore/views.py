@@ -22,7 +22,8 @@ DEBUG = False
 
 # Environment variables.
 K = int(os.getenv('K', 2))
-VIEW = os.getenv('VIEW', "localhost:8080,localhost:8081,localhost:8082")
+
+VIEW = os.getenv('VIEW', None)
 if DEBUG:
     print("VIEW is of type: %s" % (type(VIEW)))
 IPPORT = os.getenv('IPPORT', 'localhost:8080')
@@ -45,8 +46,10 @@ if DEBUG:
 if not DEBUG:
     if ',' in VIEW:
         all_nodes = VIEW.split(',')
-    else:
+    elif VIEW is not None:
         all_nodes.append(str(VIEW))
+    else:
+        all_nodes = [IPPORT]
 
 for node in all_nodes:
     current_vc[node] = 0
@@ -767,9 +770,10 @@ def update_view_pusher():
                     continue
                     # return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
         for dest_node in all_nodes:
-            url_str = 'http://' + repr(dest_node) + '/kv-store/db_broadcast'
-            req.put(url=url_str, data=None)
-            # TODO: Some kind of prune?
+            if dest_node != IPPORT:
+                url_str = 'http://' + repr(dest_node) + '/kv-store/db_broadcast'
+                req.put(url=url_str, data=None)
+                # TODO: Some kind of prune?
 
     else:  # if DEBUG:
         url_str = 'http://' + "0.0.0.0:8080" + '/kv-store/update_view_receiver'

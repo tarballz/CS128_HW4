@@ -365,10 +365,10 @@ if __name__ == "__main__":
 
             resp_dict = add_node_to_kvs(hostname, nodes[0], n1)
             number_of_partitions = resp_dict.get('number_of_partitions')
-            if number_of_partitions != 3:
-                print("ERROR: the number of partitions should be 3, but it is " + str(number_of_partitions))
+            if number_of_partitions != 2:
+                print("ERROR: the number of partitions should be 2, but it is " + str(number_of_partitions))
             else:
-                print("OK, the number of partitions is 3")
+                print("OK, the number of partitions is 2")
             resp_dict = add_node_to_kvs(hostname, nodes[2], n2)
             number_of_partitions = resp_dict.get('number_of_partitions')
             if number_of_partitions != 3:
@@ -377,24 +377,27 @@ if __name__ == "__main__":
                 print("OK, the number of partitions is 3")
             resp_dict = add_node_to_kvs(hostname, n1, n3)
             number_of_partitions = resp_dict.get('number_of_partitions')
-            if number_of_partitions != 4:
-                print("ERROR: the number of partitions should be 4, but it is " + str(number_of_partitions))
+            if number_of_partitions != 3:
+                print("ERROR: the number of partitions should be 3, but it is " + str(number_of_partitions))
             else:
-                print("OK, the number of partitions is 4")
+                print("OK, the number of partitions is 3")
 
             print("Deleting nodes ...")
+            # deleted 1 node (7-1 = 6)
             resp_dict = delete_node_from_kvs(hostname, n3, nodes[0])
             number_of_partitions = resp_dict.get('number_of_partitions')
             if number_of_partitions != 3:
                 print("ERROR: the number of partitions should be 3, but it is " + str(number_of_partitions))
             else:
                 print("OK, the number of partitions is 3")
+            # deleted 2 nodes (7-2 = 5)
             resp_dict = delete_node_from_kvs(hostname, n3, nodes[2])
             number_of_partitions = resp_dict.get('number_of_partitions')
-            if number_of_partitions != 3:
-                print("ERROR: the number of partitions should be 3, but it is " + str(number_of_partitions))
+            if number_of_partitions != 2:
+                print("ERROR: the number of partitions should be 2, but it is " + str(number_of_partitions))
             else:
-                print("OK, the number of partitions is 3")
+                print("OK, the number of partitions is 2")
+            # deleted 3 nodes (7-3 = 4)
             resp_dict = delete_node_from_kvs(hostname, n3, n2)
             number_of_partitions = resp_dict.get('number_of_partitions')
             if number_of_partitions != 2:
@@ -548,7 +551,7 @@ if __name__ == "__main__":
             if PRINT_HTTP_RESPONSES:
                 print(result)
             time.sleep(1)
-            d = send_put_request(hostname, nodes[0], keys[0], 11, causal_payload='')
+            d = send_put_request(hostname, nodes[0], keys[0], 11, causal_payload='9.9.9.9')
             d = send_get_request(hostname, nodes[2], keys[0], causal_payload=d['causal_payload'])
             if int(d['value']) == 11:
                 print("OK, the key-value store works after spamming")
@@ -607,6 +610,7 @@ if __name__ == "__main__":
             part_nodes = [find_node(nodes, ip_port) for ip_port in members]
             print("key %s belongs to partition %s with nodes %s and %s" % (
                 keys[0], partition_id, part_nodes[0], part_nodes[1]))
+            time.sleep(TB)
             print("Disconnecting both nodes to verify that the key is not available")
             disconnect_node(part_nodes[0], network, sudo)
             disconnect_node(part_nodes[1], network, sudo)
@@ -744,7 +748,7 @@ if __name__ == "__main__":
                 print("Adding a new node")
                 new_node = start_new_node(container_name, net='mynet', sudo=sudo)
                 kvs_nodes.append(new_node)
-                status_code, result = add_node_to_kvs(hostname, kvs_nodes[0], new_node)
+                result = add_node_to_kvs(hostname, kvs_nodes[0], new_node)
                 time.sleep(10)
                 counts = get_keys_distribution(hostname, kvs_nodes, keys)
                 for k, v in counts.iteritems():
