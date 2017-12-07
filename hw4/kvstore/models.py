@@ -1,6 +1,6 @@
 from __future__ import unicode_literals
 from django.db import models
-import bisect
+import json
 
 class Entry(models.Model):
     key = models.CharField(max_length=200)
@@ -16,4 +16,7 @@ class Entry(models.Model):
         return entry
 
     def __str__(self):
-        return "Key: %s Val: %s CP: %s NID: %s TS: %s" % (self.key, self.val, self.causal_payload, str(self.node_id), str(self.timestamp))
+        return "%s,%s,%s,%s,%s" % (self.key, self.val, self.causal_payload, str(self.node_id), str(self.timestamp))
+
+    def toJSON(self):
+        return json.dumps(self, default=lambda o: o.__dict__, indent=4)

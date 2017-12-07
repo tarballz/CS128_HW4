@@ -8,6 +8,7 @@ from rest_framework import status
 from .models import Entry
 import requests as req
 import hashlib
+import ast
 import json
 
 
@@ -20,13 +21,20 @@ def chunk_list(l, n):
 # SET DEBUG TO False IF YOU'RE WORKING THROUGH DOCKER
 DEBUG = False
 
+TEST = True
+
 # Environment variables.
 K = int(os.getenv('K', 2))
 
-VIEW = os.getenv('VIEW', 'localhost:8080,localhost:8081,localhost:8082')
+VIEW = os.getenv('VIEW', None)
 if DEBUG:
     print("VIEW is of type: %s" % (type(VIEW)))
-IPPORT = os.getenv('IPPORT', 'localhost:8080')
+
+if TEST:
+    IPPORT = sys.argv[-1]
+else:
+    IPPORT = os.getenv('IPPORT', 'localhost:8080')
+
 current_vc = collections.OrderedDict()
 # AVAILIP = nodes that are up.
 AVAILIP = {}
@@ -44,7 +52,7 @@ if DEBUG:
         all_nodes = [VIEW]
 
 if not DEBUG:
-    if ',' in VIEW and VIEW is not None:
+    if VIEW is not None and ',' in VIEW:
         all_nodes = VIEW.split(',')
     elif VIEW is not None:
         all_nodes.append(repr(VIEW))
@@ -343,6 +351,12 @@ def kvs_response(request, key):
                 new_timestamp = int(time.time())
 
                 if DEBUG:
+                    entry_list = []
+                    for entry in Entry.objects.all():
+                        entry_list.append(entry.toJSON())
+                    print("\n\nJSON LIST: %s\n\n" % (entry_list))
+
+                if DEBUG:
                     print("incoming_cp_CLIENT: %s" % (incoming_cp))
                     print(len(incoming_cp))
                 # CHECK IF WE WANT TO CREATE AN ENTRY AND STORE IN DB
@@ -518,7 +532,6 @@ def broadcast(key, value, cp, node_id, timestamp, is_GET_broadcast):
                                            'is_GET_broadcast': is_GET_broadcast}, timeout=0.5)
             except:
                 AVAILIP[k] = False
-
 
 
 def selective_broadcast(key, value, cp):
@@ -833,19 +846,24 @@ def check_nodes(request):
     # new_ipport = request.data['ip_port']
     return Response(status=status.HTTP_200_OK)
 
+
 # SEND ALL OF MY ENTRIES TO EVERY OTHER NODE.
 @api_view(['PUT'])
 def db_broadcast(request):
     print("Made it to call broadcast!!!!")
     e = ''
+    entry_list = []
+
+    for entry in Entry.objects.all():
+        entry_list.append(entry.__str__())
+
     global AVAILIP
 
-    for k in AVAILIP:
-        if AVAILIP[k]:
+    for k in all_nodes:
+        if True:
             url_str = 'http://' + k + '/kv-store/db_broadcast_receive'
-            data = {'entry_list': Entry.objects.all()}
             try:
-                res = req.put(url=url_str, json=data, timeout=0.5)
+                res = req.put(url=url_str, data={"entry_list": "foo"}, timeout=0.5)
                 response = Response(res.json())
                 response.status_code = res.status_code
                 return response
@@ -853,21 +871,32 @@ def db_broadcast(request):
                 print("DB EXCEPTION: %s" % (e))
                 AVAILIP[k] = False
                 continue
-    return Response({"result": "error", "error": "key value store is not available", "partition_id": my_upper_bound, "exception": e},
+    return Response({"result": "error", "error": "key value store is not available", "partition_id": my_upper_bound,
+                     "exception": e},
                     status=status.HTTP_511_NETWORK_AUTHENTICATION_REQUIRED)
 
     # return object_broadcast(Entry.objects.all())
+
 
 # RECEIVE ALL OF THESE ENTRIES THAT WERE SENT TO ME.
 @api_view(['PUT'])
 def db_broadcast_receive(request):
     try:
-        entry_list = list(request.data['entry_list'])
-        for entry in entry_list:
-            Entry.objects.update_or_create(key=entry.key, defaults={'val': entry.val,
-                                                                    'causal_payload': entry.causal_payload,
-                                                                    'node_id': entry.node_id,
-                                                                    'timestamp': entry.timestamp})
+        #entry_list = request.data['entry_list']
+        # TURN THE STRING REPRESENTATION OF THE LIST ACTUALLY INTO A LIST.
+        #entry_list = ast.literal_eval(entry_list)
+        # STRIP UNNECESSARY SPACES.
+        #entry_list = [n.strip() for n in entry_list]
+        # for entry in entry_list:
+        #     entry = entry.split(',')
+        #     Entry.objects.update_or_create(key=entry[0], defaults={'val': entry[1],
+        #                                                            'causal_payload': entry[2],
+        #                                                            'node_id': entry[3],
+        #                                                            'timestamp': entry[4]})
+        Entry.objects.update_or_create(key="test", defaults={'val': "test",
+                                                             'causal_payload': "6.6.6.6",
+                                                             'node_id': -1,
+                                                             'timestamp': int(time.time())})
         return Response({"msg": "it worked."}, status=status.HTTP_201_CREATED)
     except:
         return Response({'result': 'error', "error": "key value store is not available"},
