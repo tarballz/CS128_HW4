@@ -101,6 +101,8 @@ def chunk_assign():
     global groups_sorted_list
 
     chunked = []
+    proxy_nodes = []
+    replica_nodes = []
     groups_dict = {}
 
     num_groups = len(all_nodes) // K
