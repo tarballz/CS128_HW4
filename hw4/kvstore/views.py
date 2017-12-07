@@ -134,8 +134,8 @@ def chunk_assign():
                         print("lower_bound: %s" % (lower_bound))
                     # Need this to confirm a key is within our range, and not JUST less than our value.
                     lower_bound = upper_bound - step
-                # add node to our view
-                #replica_nodes.append(node)
+                    # add node to our view
+                    # replica_nodes.append(node)
             # increment the upper range for the next cluster of IPPORTS
             upper_bound += step
         else:
@@ -145,13 +145,12 @@ def chunk_assign():
                 proxy_nodes.append(node)
 
 
-        # list of our group_dict sorted by the keys -- (key = upper bound) --
+                # list of our group_dict sorted by the keys -- (key = upper bound) --
     groups_sorted_list = [[k, groups_dict[k]] for k in sorted(groups_dict, key=int)]
     for tup in groups_sorted_list:
         if my_upper_bound == tup[0]:
             replica_nodes = tup[1]
             break
-
 
 
 chunk_assign()
@@ -196,12 +195,13 @@ def get_all_replicas(request):
 
 @api_view(['GET'])
 def get_state(request):
-    data= {'IP':IPPORT,
-           'GSL ':str(groups_sorted_list),
-           'ALL NODES':str(all_nodes),
-           'PROXIES':str(proxy_nodes)
-           }
+    data = {'IP': IPPORT,
+            'GSL ': str(groups_sorted_list),
+            'ALL NODES': str(all_nodes),
+            'PROXIES': str(proxy_nodes)
+            }
     return Response(data=data, status=200)
+
 
 # CORRECT KEYS
 @api_view(['GET', 'PUT'])
@@ -243,7 +243,7 @@ def kvs_response(request, key):
                     incoming_timestamp = int(request.data['timestamp'])
                     is_GET_broadcast = int(request.data['is_GET_broadcast'])
                 except:
-                    return Response({'result': 'error', 'msg': 'Cannot construct node-to-node entry'},
+                    return Response({'result': 'error', "error": "key value store is not available"},
                                     status=status.HTTP_428_PRECONDITION_REQUIRED)
 
                 cp_list = incoming_cp.split('.')
@@ -262,10 +262,10 @@ def kvs_response(request, key):
                                                                                   'causal_payload': incoming_cp,
                                                                                   'node_id': incoming_node_id,
                                                                                   'timestamp': incoming_timestamp})
-                                return Response({'result': 'Success', 'msg': 'Replaced'},
+                                return Response({'result': 'success', 'msg': 'replaced'},
                                                 status=status.HTTP_202_ACCEPTED)
                             else:
-                                return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                return Response({'result': 'error', "error": "key value store is not available"},
                                                 status=status.HTTP_406_NOT_ACCEPTABLE)
 
 
@@ -276,8 +276,9 @@ def kvs_response(request, key):
                                                                               'causal_payload': incoming_cp,
                                                                               'node_id': incoming_node_id,
                                                                               'timestamp': incoming_timestamp})
-                            return Response({'result': 'Success', 'msg': 'Key does not exist'},
-                                            status=status.HTTP_201_CREATED)
+                            return Response(
+                                {'result': 'success', 'msg': 'Key does not exist', "partition_id": my_upper_bound},
+                                status=status.HTTP_201_CREATED)
 
                     # NOT A GET BROADCAST, SO HANDLE THE PUT NORMALLY.
                     # IF INCOMING_CP > CURRENT_VC
@@ -288,9 +289,9 @@ def kvs_response(request, key):
                                                                           'node_id': incoming_node_id,
                                                                           'timestamp': incoming_timestamp})
                         return Response(
-                            {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
-                             "causal_payload": incoming_cp,
-                             "timestamp": incoming_timestamp}, status=203)  # status.HTTP_200_OK
+                            {'result': 'success', "value": incoming_value, "partition_id": my_upper_bound,
+                             "causal_payload": incoming_cp, "timestamp": incoming_timestamp},
+                            status=203)  # status.HTTP_200_OK
 
                     elif compare_vc(cp_list, list(current_vc.values())) == 0:
                         new_entry = False
@@ -305,8 +306,9 @@ def kvs_response(request, key):
                                                                               'causal_payload': incoming_cp,
                                                                               'node_id': incoming_node_id,
                                                                               'timestamp': incoming_timestamp})
-                            return Response({'result': 'Success', 'msg': 'Key does not exist'},
-                                            status=204)  # status.HTTP_201_CREATED
+                            return Response(
+                                {'result': 'success', 'msg': 'Key does not exist', "partition_id": my_upper_bound},
+                                status=204)  # status.HTTP_201_CREATED
                         # IF WE'VE GOTTEN HERE, KEY EXISTS
                         else:
                             if incoming_timestamp > existing_entry.timestamp:
@@ -316,19 +318,19 @@ def kvs_response(request, key):
                                                                                   'timestamp': incoming_timestamp})
                                 return Response(
                                     {'result': 'success', "value": incoming_value, "node_id": incoming_node_id,
-                                     "causal_payload": incoming_cp,
-                                     "timestamp": incoming_timestamp}, status=status.HTTP_200_OK)
+                                     "causal_payload": incoming_cp, "timestamp": incoming_timestamp},
+                                    status=status.HTTP_200_OK)
                             else:
-                                return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                                return Response({'result': 'error', "error": "key value store is not available"},
                                                 status=status.HTTP_406_NOT_ACCEPTABLE)
 
                     # IF INCOMONG_CP < CURRENT_VC
                     # elif compare_vc(cp_list, list(current_vc.values())) == -1:
                     else:
-                        return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
+                        return Response({'result': 'error', "error": "key value store is not available"},
                                         status=status.HTTP_406_NOT_ACCEPTABLE)
                 else:
-                    return Response({'msg': 'hashed key is not in my range.', 'my_upper_bound': my_upper_bound},
+                    return Response({'result': 'error', "error": "key value store is not available"},
                                     status=status.HTTP_412_PRECONDITION_FAILED)
 
 
@@ -343,32 +345,6 @@ def kvs_response(request, key):
                 if DEBUG:
                     print("incoming_cp_CLIENT: %s" % (incoming_cp))
                     print(len(incoming_cp))
-
-                    # FIRST ATTEMPT AT MAPPING A KEY TO A GROUP, AND FORWARDING IF THE HASHED KEY DOES NOT
-                    # MATCH OUR GROUP.
-                    # if key_to_group_hash(key) != groups_dict[IPPORT]:
-                    #     for k in groups_dict:
-                    #         url_str = 'http://' + k + '/kv-store/' + key
-                    #         try:
-                    #             # ACT AS A PSEUDO-PROXY.
-                    #             res = req.put(url=url_str, data={'val': input_value,
-                    #                                              'causal_payload': incoming_cp,
-                    #                                              'timestamp': new_timestamp}, timeout=0.5)
-                    #             response = Response(res.json())
-                    #             response.status_code = res.status_code
-                    #             return response
-                    #         except:
-                    #             continue
-                    # else:
-                    #     broadcast(key, input_value, incoming_cp, node_id, new_timestamp, 0)
-                    #     Entry.objects.update_or_create(key=key, defaults={'val': input_value,
-                    #                                                       'causal_payload': incoming_cp,
-                    #                                                       'node_id': node_id,
-                    #                                                       'timestamp': new_timestamp})
-                    #     return Response(
-                    #         {'result': 'success', "value": input_value, "node_id": node_id, "causal_payload": incoming_cp,
-                    #          "timestamp": new_timestamp}, status=209)  # status.HTTP_201_CREATED
-                    # # END ATTEMPT.
                 # CHECK IF WE WANT TO CREATE AN ENTRY AND STORE IN DB
                 if i_should_store(key):
                     # len(causal_payload) == 0 if the user hasn't done ANY reads yet.
@@ -401,9 +377,8 @@ def kvs_response(request, key):
                                                                           'node_id': node_id,
                                                                           'timestamp': new_timestamp})
                         return Response(
-                            {'result': 'success', "value": input_value, "node_id": node_id,
-                             "causal_payload": incoming_cp,
-                             "timestamp": new_timestamp, "my_upper_bound": my_upper_bound},
+                            {'result': 'success', "value": input_value, "partition_id": my_upper_bound,
+                             "causal_payload": incoming_cp, "timestamp": new_timestamp},
                             status=205)  # status.HTTP_201_CREATED
 
                     # USER HAS DONE READS BEFORE
@@ -443,15 +418,15 @@ def kvs_response(request, key):
                                                                               'node_id': node_id,
                                                                               'timestamp': new_timestamp})
                             return Response(
-                                {'result': 'success', "value": input_value, "node_id": node_id,
-                                 "causal_payload": incoming_cp,
-                                 "timestamp": new_timestamp}, status=206)  # status.HTTP_200_OK
+                                {'result': 'success', "value": input_value, "partition_id": my_upper_bound,
+                                 "causal_payload": incoming_cp, "timestamp": new_timestamp},
+                                status=206)  # status.HTTP_200_OK
 
 
                         # causal payload < current_vc
                         else:
-                            return Response({'result': 'failure', 'msg': 'Can\'t go back in time.'},
-                                            status=status.HTTP_406_NOT_ACCEPTABLE)
+                            return Response({'result': 'error', "error": "key value store is not available"},
+                                            status=status.HTTP_412_PRECONDITION_FAILED)
                 else:
                     return selective_broadcast(key, input_value, incoming_cp)
                     # return Response({'msg': 'hashed key is not in my range.', 'my_upper_bound': my_upper_bound}, status=status.HTTP_412_PRECONDITION_FAILED)
@@ -475,12 +450,13 @@ def kvs_response(request, key):
                 # TODO: There's an issue here where when a node does a PUT, ping_nodes() gets called, which calls
                 # TODO: a GET, and the entry gets made here instead of actually in the PUT.
                 existing_entry = Entry.objects.get(key=key)
-                return Response({'result': 'success', "value": existing_entry.val, "node_id": existing_entry.node_id,
+                return Response({'result': 'success', "value": existing_entry.val, "partition_id": my_upper_bound,
                                  "causal_payload": existing_entry.causal_payload,
                                  "timestamp": existing_entry.timestamp}, status=207)  # status.HTTP_200_OK
             except:
                 # ERROR HANDLING: KEY DOES NOT EXIST
-                return Response({'result': 'error', 'msg': 'Key does not exist'}, status=status.HTTP_404_NOT_FOUND)
+                return Response({'result': 'error', "error": "key value store is not available"},
+                                status=status.HTTP_412_PRECONDITION_FAILED)
 
 
     # PROXY RESPONSE
@@ -488,7 +464,18 @@ def kvs_response(request, key):
 
         # 	# GENERATE BASE URL STRING
         #     url_str = 'http://'+os.environ['MAINIP']+'/kv-store/'+key
-        dest_node = laziest_node(replica_nodes)
+        # dest_node = laziest_node(replica_nodes)
+
+        # NEED TO GET PROPER CLUSTER TO FORWARD TO.
+        dest_node = ''
+        sh = seeded_hash(key)
+        for tup in groups_sorted_list:
+            if sh <= tup[0]:
+                ip_list = tup[1]
+                # JUST GRABBING THE FIRST NODE, MAYBE REPLACE WITH RANDOM
+                dest_node = ip_list[0]
+                break
+
         if DEBUG:
             print("SELECTED ", dest_node, " TO FORWARD TO.")
 
@@ -510,7 +497,8 @@ def kvs_response(request, key):
                 response.status_code = res.status_code
             except Exception:
                 AVAILIP[dest_node] = False
-                return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
+                return Response({'result': 'error', "error": "key value store is not available"},
+                                status=status.HTTP_412_PRECONDITION_FAILED)
 
         return response
 
@@ -531,38 +519,6 @@ def broadcast(key, value, cp, node_id, timestamp, is_GET_broadcast):
             except:
                 AVAILIP[k] = False
 
-# 
-# def object_broadcast(entry_list):
-#     global AVAILIP
-# 
-#     for k in AVAILIP:
-#         if AVAILIP[k] and k != IPPORT:
-#             url_str = 'http://' + k + '/kv-store/db_broadcast_receive'
-#             data = {'entry_list': entry_list}
-#             try:
-#                 res = req.put(url=url_str, json=data, timeout=0.5)
-#                 response = Response(res.json())
-#                 response.status_code = res.status_code
-#                 return response
-#             except:
-#                 AVAILIP[k] = False
-#                 continue
-#     return Response({"msg": "shits fucked"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-# 
-# 
-
-@api_view(['PUT'])
-def db_broadcast_receive(request):
-    try:
-        entry_list = request.data['entry_list']
-        for entry in entry_list:
-            Entry.objects.update_or_create(key=entry.key, defaults={'val': entry.val,
-                                                                    'causal_payload': entry.causal_payload,
-                                                                    'node_id': entry.node_id,
-                                                                    'timestamp': entry.timestamp})
-        return Response({"msg": "it worked."}, status=status.HTTP_201_CREATED)
-    except:
-        return Response({"msg": "its fucked"}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 def selective_broadcast(key, value, cp):
@@ -709,9 +665,13 @@ def update_view(request):
             print("len of rep_n: %d" % (len(replica_nodes)))
             print("all_nodes: %s" % (all_nodes))
 
+        partition_id = -1
+        for tup in groups_sorted_list:
+            if my_upper_bound == tup[0]:
+                partition_id = groups_sorted_list.index(tup)
+
         return Response(
-            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport),
-             "number_of_nodes": node_num},
+            {"msg": "success", "partition_id": partition_id, "number_of_partitions": len(groups_sorted_list)},
             status=status.HTTP_200_OK)
 
     elif request.GET.get('type') == 'remove':
@@ -745,18 +705,18 @@ def update_view(request):
 
         replica_nodes = []
         proxy_nodes = []
+        groups_sorted_list = []
         # REEVALUATE OUR UPPERBOUND AND RE-CHUNK OUR NODES.
         chunk_assign()
         # SEND OUR NEW VIEW-OF-THE-WORLD TO ALL OTHER NODES.
         update_view_pusher()
 
         return Response(
-            {"msg": "success", "node_id": list(current_vc.keys()).index(new_ipport),
-             "number_of_nodes": node_num},
+            {"msg": "success", "number_of_partitions": len(groups_sorted_list)},
             status=status.HTTP_200_OK)
 
-    return Response({'result': 'error', 'msg': 'key value store is not available'},
-                    status=status.HTTP_501_NOT_IMPLEMENTED)
+    return Response({'result': 'error', "error": "key value store is not available"},
+                    status=status.HTTP_412_PRECONDITION_FAILED)
 
 
 # THIS FUNCTION WILL PACKAGE OUR all_nodes list, AVAILIP list, and groups_sorted_list,
@@ -830,7 +790,7 @@ def update_view_receiver(request):
         all_nodes = new_all_nodes
         AVAILIP = new_AVAILIP
         groups_sorted_list = new_gsl
-        print("IP: "+IPPORT+" GSL : "+ str(groups_sorted_list))
+        print("IP: " + IPPORT + " GSL : " + str(groups_sorted_list))
         print("++++++++++++++++++++")
         print("PRINTING NEW UPDATE VIEW")
         print("++++++++++++++++++++")
@@ -845,36 +805,74 @@ def update_view_receiver(request):
 
 
 @api_view(['GET'])
+def get_all_partition_ids(request):
+    partition_id_list = []
+    for tup in groups_sorted_list:
+        partition_id_list.append(tup[0])
+
+    return Response({"result": "success", "partition_id_list": partition_id_list}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+def get_partition_members(request):
+    partition_members = []
+    try:
+        partition_id = int(request.data['partition_id'])
+        for tup in groups_sorted_list:
+            if partition_id == tup[0]:
+                partition_members = tup[1]
+                break
+        return Response({"result": "success", "partition_members": partition_members})
+    except:
+        return Response({'result': 'error', "error": "key value store is not available"},
+                        status=status.HTTP_412_PRECONDITION_FAILED)
+
+
+@api_view(['GET'])
 def check_nodes(request):
     # new_ipport = request.data['ip_port']
     return Response(status=status.HTTP_200_OK)
 
-
+# SEND ALL OF MY ENTRIES TO EVERY OTHER NODE.
 @api_view(['PUT'])
 def db_broadcast(request):
     print("Made it to call broadcast!!!!")
+    e = ''
     global AVAILIP
-    #
-    # for k in AVAILIP:
-    #     if AVAILIP[k] and k != IPPORT:
-    #         url_str = 'http://' + k + '/kv-store/db_broadcast_receive'
-    #         data = {'entry_list': Entry.objects.all()}
-    #         try:
-    #             res = req.put(url=url_str, json=data, timeout=0.5)
-    #             response = Response(res.json())
-    #             response.status_code = res.status_code
-    #             return response
-    #         except:
-    #             AVAILIP[k] = False
-    #             continue
-    # return Response({"msg": "shits fucked"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    #return object_broadcast(Entry.objects.all())
-    return Response(
-        {
-            'name':'success'
-        }
-    )
+    for k in AVAILIP:
+        if AVAILIP[k]:
+            url_str = 'http://' + k + '/kv-store/db_broadcast_receive'
+            data = {'entry_list': Entry.objects.all()}
+            try:
+                res = req.put(url=url_str, json=data, timeout=0.5)
+                response = Response(res.json())
+                response.status_code = res.status_code
+                return response
+            except Exception as e:
+                print("DB EXCEPTION: %s" % (e))
+                AVAILIP[k] = False
+                continue
+    return Response({"result": "error", "error": "key value store is not available", "partition_id": my_upper_bound, "exception": e},
+                    status=status.HTTP_511_NETWORK_AUTHENTICATION_REQUIRED)
+
+    # return object_broadcast(Entry.objects.all())
+
+# RECEIVE ALL OF THESE ENTRIES THAT WERE SENT TO ME.
+@api_view(['PUT'])
+def db_broadcast_receive(request):
+    try:
+        entry_list = list(request.data['entry_list'])
+        for entry in entry_list:
+            Entry.objects.update_or_create(key=entry.key, defaults={'val': entry.val,
+                                                                    'causal_payload': entry.causal_payload,
+                                                                    'node_id': entry.node_id,
+                                                                    'timestamp': entry.timestamp})
+        return Response({"msg": "it worked."}, status=status.HTTP_201_CREATED)
+    except:
+        return Response({'result': 'error', "error": "key value store is not available"},
+                        status=status.HTTP_412_PRECONDITION_FAILED)
+
 
 def compare_vc(a, b):
     """
@@ -913,7 +911,7 @@ def laziest_node(r_nodes):
     for node in replica_nodes:
         if node != IPPORT:
             return node
-    #return min(r_nodes.items(), key=lambda x: x[1])[0]
+            # return min(r_nodes.items(), key=lambda x: x[1])[0]
 
 
 # def key_to_group_hash(str):
