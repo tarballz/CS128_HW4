@@ -7,6 +7,7 @@ urlpatterns = [
     url(r'^kv-store/get_node_details', views.get_node_details),
     url(r'^kv-store/get_all_replicas', views.get_all_replicas),
     url(r'^kv-store/db_broadcast_receive', views.db_broadcast_receive),
+    url(r'^kv-store/get_state', views.get_state),
     url(r'^kv-store/update_view$', views.update_view),
     url(r'^kv-store/update_view_receiver', views.update_view_receiver),
     url(r'^kv-store/check_nodes', views.check_nodes),

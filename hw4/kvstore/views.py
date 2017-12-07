@@ -47,7 +47,7 @@ if not DEBUG:
     if ',' in VIEW:
         all_nodes = VIEW.split(',')
     elif VIEW is not None:
-        all_nodes.append(str(VIEW))
+        all_nodes.append(repr(VIEW))
     else:
         all_nodes = [IPPORT]
 
@@ -156,8 +156,8 @@ chunk_assign()
 if MAX_HASH_NUM > upper_bound:
     MAX_HASH_NUM = upper_bound
 
-if DEBUG:
-    print("g_s_l: %s" % (groups_sorted_list))
+# if DEBUG:
+print("g_s_l: %s" % (groups_sorted_list))
 
 for node in replica_nodes:
     current_vc[node] = 0
@@ -188,6 +188,15 @@ def get_node_details(request):
 def get_all_replicas(request):
     return Response({"result": "success", "replicas": replica_nodes}, status=status.HTTP_200_OK)
 
+
+@api_view(['GET'])
+def get_state(request):
+    data= {'IP':IPPORT,
+           'GSL ':str(groups_sorted_list),
+           'ALL NODES':str(all_nodes),
+           'PROXIES':str(proxy_nodes)
+           }
+    return Response(data=data, status=200)
 
 # CORRECT KEYS
 @api_view(['GET', 'PUT'])
@@ -770,10 +779,9 @@ def update_view_pusher():
                     continue
                     # return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
         for dest_node in all_nodes:
-            if dest_node != IPPORT:
-                url_str = 'http://' + repr(dest_node) + '/kv-store/db_broadcast'
-                req.put(url=url_str, data=None)
-                # TODO: Some kind of prune?
+            url_str = 'http://' + repr(dest_node) + '/kv-store/db_broadcast'
+            req.put(url=url_str, data=None)
+            # TODO: Some kind of prune?
 
     else:  # if DEBUG:
         url_str = 'http://' + "0.0.0.0:8080" + '/kv-store/update_view_receiver'
@@ -819,6 +827,8 @@ def update_view_receiver(request):
         print("++++++++++++++++++++")
         print("PRINTING NEW UPDATE VIEW")
         print("++++++++++++++++++++")
+        print("GROUPS")
+        print("IP: " + IPPORT + " GSL : " + str(groups_sorted_list))
         print(str(all_nodes))
         return Response({'msg': 'shits totally not fucked'}, status=200)
 
