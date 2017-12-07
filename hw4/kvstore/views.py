@@ -23,7 +23,7 @@ DEBUG = False
 # Environment variables.
 K = int(os.getenv('K', 2))
 
-VIEW = os.getenv('VIEW', None)
+VIEW = os.getenv('VIEW', 'localhost:8080,localhost:8081,localhost:8082')
 if DEBUG:
     print("VIEW is of type: %s" % (type(VIEW)))
 IPPORT = os.getenv('IPPORT', 'localhost:8080')
@@ -44,7 +44,7 @@ if DEBUG:
         all_nodes = [VIEW]
 
 if not DEBUG:
-    if ',' in VIEW:
+    if ',' in VIEW and VIEW is not None:
         all_nodes = VIEW.split(',')
     elif VIEW is not None:
         all_nodes.append(repr(VIEW))
@@ -99,6 +99,9 @@ def chunk_assign():
     global all_nodes
     global replica_nodes
     global groups_sorted_list
+
+    chunked = []
+    groups_dict = {}
 
     num_groups = len(all_nodes) // K
     if num_groups <= 0:
@@ -674,6 +677,7 @@ def update_view(request):
             print("len of rep_n: %d" % (len(replica_nodes)))
         # Added node should be a replica.
         all_nodes.append(new_ipport)
+        all_nodes = list(set([item for item in all_nodes]))
         AVAILIP[new_ipport] = True
         if new_ipport not in current_vc:
             # Init new entry into our dictionary.
@@ -689,6 +693,7 @@ def update_view(request):
 
         replica_nodes = []
         proxy_nodes = []
+        groups_sorted_list = []
         # REEVALUATE OUR UPPERBOUND AND RE-CHUNK OUR NODES.
         chunk_assign()
         # SEND OUR NEW VIEW-OF-THE-WORLD TO ALL OTHER NODES.
@@ -763,7 +768,7 @@ def update_view_pusher():
         print(all_nodes)
         for dest_node in all_nodes:
             if True:
-                url_str = 'http://' + repr(dest_node) + '/kv-store/update_view_receiver'
+                url_str = 'http://' + dest_node + '/kv-store/update_view_receiver'
                 data = {'AN': all_nodes,
                         'AIP': AVAILIP,
                         'GSL': groups_sorted_list}
@@ -779,7 +784,7 @@ def update_view_pusher():
                     continue
                     # return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
         for dest_node in all_nodes:
-            url_str = 'http://' + repr(dest_node) + '/kv-store/db_broadcast'
+            url_str = 'http://' + dest_node + '/kv-store/db_broadcast'
             req.put(url=url_str, data=None)
             # TODO: Some kind of prune?
 
@@ -790,7 +795,7 @@ def update_view_pusher():
                 'GSL': groups_sorted_list}
 
         for dest_node in all_nodes:
-            url_str = 'http://' + repr(dest_node) + '/kv-store/db_broadcast'
+            url_str = 'http://' + dest_node + '/kv-store/db_broadcast'
             req.put(url=url_str, data=None)
 
         try:
