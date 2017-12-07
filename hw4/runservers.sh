@@ -27,6 +27,7 @@ port2=8080
 echo "+++++++++++++++++++++++++++++++++++++++++++++++"
 echo "                BEFORE ADD                     "
 echo "+++++++++++++++++++++++++++++++++++++++++++++++"
+
 for i in $(seq 1 $num_servers)		#"${ports[@]}"
 do
 	echo "Getting State of localhost:$port"
@@ -38,7 +39,7 @@ done
 sleep .5
 port=8080
 curl -X PUT "localhost:8080/kv-store/update_view?type=add" -d ip_port=localhost:8083
-echo " "
+echo "Adding localhost:8083"
 echo "+++++++++++++++++++++++++++++++++++++++++++++++"
 echo "                AFTER ADDING                   "
 echo "+++++++++++++++++++++++++++++++++++++++++++++++"
@@ -53,7 +54,8 @@ done
 sleep .5
 port=8080
 curl -X PUT "localhost:8080/kv-store/update_view?type=remove" -d ip_port=localhost:8083
-echo " "
+echo " Removing localhost:8083"
+
 echo "+++++++++++++++++++++++++++++++++++++++++++++++"
 echo "                REMOVING                       "
 echo "+++++++++++++++++++++++++++++++++++++++++++++++"

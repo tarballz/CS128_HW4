@@ -152,8 +152,8 @@ chunk_assign()
 if MAX_HASH_NUM > upper_bound:
     MAX_HASH_NUM = upper_bound
 
-if DEBUG:
-    print("g_s_l: %s" % (groups_sorted_list))
+# if DEBUG:
+print("g_s_l: %s" % (groups_sorted_list))
 
 for node in replica_nodes:
     current_vc[node] = 0
