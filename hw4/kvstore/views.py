@@ -154,7 +154,7 @@ def chunk_assign():
                 # list of our group_dict sorted by the keys -- (key = upper bound) --
     groups_sorted_list = [[k, groups_dict[k]] for k in sorted(groups_dict, key=int)]
     for tup in groups_sorted_list:
-        if my_upper_bound == tup[0]:
+        if my_upper_bound == int(tup[0]):
             replica_nodes = tup[1]
             break
 
@@ -334,14 +334,16 @@ def kvs_response(request, key):
                     # elif compare_vc(cp_list, list(current_vc.values())) == -1:
                     else:
                         return Response({'result': 'error', "error": "key value store is not available"},
+
                                         status=status.HTTP_406_NOT_ACCEPTABLE)
+                # IF I SHOULD NOT STORE KEY.
                 else:
                     return Response({'result': 'error', "error": "key value store is not available"},
                                     status=status.HTTP_412_PRECONDITION_FAILED)
 
 
             # =====================================================
-            # IF NO TIMESTAMP, WE KNOW THIS PUT IS FROM THE CLIENT.
+            # IF NO NODE_ID, WE KNOW THIS PUT IS FROM THE CLIENT.
             # =====================================================
             else:
                 incoming_cp = str(request.data['causal_payload'])
@@ -518,10 +520,9 @@ def kvs_response(request, key):
 def broadcast(key, value, cp, node_id, timestamp, is_GET_broadcast):
     global AVAILIP
 
-    for k in AVAILIP:
-        # IF THE NODE IS UP, AND THE NODE IS NOT ME, AND WE'RE IN THE SAME GROUP
-        if AVAILIP[k] and k != IPPORT:
-            url_str = 'http://' + k + '/kv-store/' + key
+    for node in replica_nodes:
+        if node != IPPORT:
+            url_str = 'http://' + node + '/kv-store/' + key
             try:
                 req.put(url=url_str, data={'val': value,
                                            'causal_payload': cp,
@@ -529,7 +530,7 @@ def broadcast(key, value, cp, node_id, timestamp, is_GET_broadcast):
                                            'timestamp': timestamp,
                                            'is_GET_broadcast': is_GET_broadcast}, timeout=0.5)
             except:
-                AVAILIP[k] = False
+                AVAILIP[node] = False
                 return Response(
                     {"result": "error", "error": "key value store is not available", "partition_id": my_upper_bound},
                     status=status.HTTP_424_FAILED_DEPENDENCY)
@@ -538,19 +539,25 @@ def broadcast(key, value, cp, node_id, timestamp, is_GET_broadcast):
 
 def selective_broadcast(key, value, cp):
     sh = seeded_hash(key)
-    for k, v in groups_sorted_list:
-        if sh <= k:
-            for dest_node in v:
+    for tup in groups_sorted_list:
+        if sh <= tup[0]:
+            for dest_node in tup[1]:
                 try:
                     url_str = 'http://' + dest_node + '/kv-store/' + key
                     res = req.put(url=url_str, data={'val': value,
                                                      'causal_payload': cp}, timeout=0.5)
-                    response = Response(res.json())
-                    response.status_code = res.status_code
-                    return response
+                    # response = Response(res.json())
+                    # response.status_code = res.status_code
+                    # return response
                 except Exception:
                     AVAILIP[dest_node] = False
-                    continue
+                    # continue
+                    return Response(
+                        {"result": "error", "error": "key value store is not available",
+                         "partition_id": my_upper_bound},
+                        status=status.HTTP_424_FAILED_DEPENDENCY)
+            break
+    return Response({"msg": "selective_broadcast"}, status=299)
 
 
 def i_should_store(key):
@@ -664,9 +671,9 @@ def update_view(request):
             if AVAILIP[k]:
                 node_num += 1
 
-        #replica_nodes = []
-        #proxy_nodes = []
-        #groups_sorted_list = []
+        # replica_nodes = []
+        # proxy_nodes = []
+        # groups_sorted_list = []
         # REEVALUATE OUR UPPERBOUND AND RE-CHUNK OUR NODES.
         chunk_assign()
         # SEND OUR NEW VIEW-OF-THE-WORLD TO ALL OTHER NODES.
@@ -679,8 +686,6 @@ def update_view(request):
             print("replica_nodes: %s" % (replica_nodes))
             print("len of rep_n: %d" % (len(replica_nodes)))
             print("all_nodes: %s" % (all_nodes))
-
-
 
         return Response(
             {"msg": "success", "partition_id": my_upper_bound, "number_of_partitions": len(groups_sorted_list)},
@@ -757,7 +762,7 @@ def update_view_pusher():
                     print(e)
                     continue
                     # return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
-        time.sleep(2)
+        # time.sleep(2)
         for dest_node in all_nodes:
             url_str = 'http://' + dest_node + '/kv-store/db_broadcast'
             req.put(url=url_str, data=None)
