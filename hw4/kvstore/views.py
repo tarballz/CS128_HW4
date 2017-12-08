@@ -21,14 +21,12 @@ def chunk_list(l, n):
 # SET DEBUG TO False IF YOU'RE WORKING THROUGH DOCKER
 DEBUG = False
 
-TEST = True
+TEST = False
 
 # Environment variables.
-K = int(os.getenv('K', 2))
+K = int(os.getenv('K', 1))
 
 VIEW = os.getenv('VIEW', None)
-if DEBUG:
-    print("VIEW is of type: %s" % (type(VIEW)))
 
 if TEST:
     IPPORT = sys.argv[-1]
@@ -532,6 +530,10 @@ def broadcast(key, value, cp, node_id, timestamp, is_GET_broadcast):
                                            'is_GET_broadcast': is_GET_broadcast}, timeout=0.5)
             except:
                 AVAILIP[k] = False
+                return Response(
+                    {"result": "error", "error": "key value store is not available", "partition_id": my_upper_bound},
+                    status=status.HTTP_424_FAILED_DEPENDENCY)
+    return Response(status=status.HTTP_200_OK)
 
 
 def selective_broadcast(key, value, cp):
@@ -662,9 +664,9 @@ def update_view(request):
             if AVAILIP[k]:
                 node_num += 1
 
-        replica_nodes = []
-        proxy_nodes = []
-        groups_sorted_list = []
+        #replica_nodes = []
+        #proxy_nodes = []
+        #groups_sorted_list = []
         # REEVALUATE OUR UPPERBOUND AND RE-CHUNK OUR NODES.
         chunk_assign()
         # SEND OUR NEW VIEW-OF-THE-WORLD TO ALL OTHER NODES.
@@ -678,13 +680,10 @@ def update_view(request):
             print("len of rep_n: %d" % (len(replica_nodes)))
             print("all_nodes: %s" % (all_nodes))
 
-        partition_id = -1
-        for tup in groups_sorted_list:
-            if my_upper_bound == tup[0]:
-                partition_id = groups_sorted_list.index(tup)
+
 
         return Response(
-            {"msg": "success", "partition_id": partition_id, "number_of_partitions": len(groups_sorted_list)},
+            {"msg": "success", "partition_id": my_upper_bound, "number_of_partitions": len(groups_sorted_list)},
             status=status.HTTP_200_OK)
 
     elif request.GET.get('type') == 'remove':
@@ -758,6 +757,7 @@ def update_view_pusher():
                     print(e)
                     continue
                     # return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
+        time.sleep(2)
         for dest_node in all_nodes:
             url_str = 'http://' + dest_node + '/kv-store/db_broadcast'
             req.put(url=url_str, data=None)
@@ -851,7 +851,7 @@ def check_nodes(request):
 @api_view(['PUT'])
 def db_broadcast(request):
     print("Made it to call broadcast!!!!")
-    e = ''
+    resp = None
     entry_list = []
 
     for entry in Entry.objects.all():
@@ -859,18 +859,25 @@ def db_broadcast(request):
 
     global AVAILIP
 
-    for k in all_nodes:
-        if True:
-            url_str = 'http://' + k + '/kv-store/db_broadcast_receive'
-            try:
-                res = req.put(url=url_str, data={"entry_list": "foo"}, timeout=0.5)
-                response = Response(res.json())
-                response.status_code = res.status_code
-                return response
-            except Exception as e:
-                print("DB EXCEPTION: %s" % (e))
-                AVAILIP[k] = False
-                continue
+    # for k in all_nodes:
+    #     if True:
+    #         url_str = 'http://' + k + '/kv-store/db_broadcast_receive'
+    #         try:
+    #             res = req.put(url=url_str, data={"entry_list": "foo"}, timeout=0.5)
+    #             response = Response(res.json())
+    #             response.status_code = res.status_code
+    #             return response
+    #         except Exception as e:
+    #             print("DB EXCEPTION: %s" % (e))
+    #             AVAILIP[k] = False
+    #             continue
+
+    for entry in Entry.objects.all():
+        resp = broadcast(entry.key, entry.val, entry.causal_payload, entry.node_id, entry.timestamp, 1)
+
+    if resp.status_code == 200:
+        return resp
+
     return Response({"result": "error", "error": "key value store is not available", "partition_id": my_upper_bound,
                      "exception": e},
                     status=status.HTTP_511_NETWORK_AUTHENTICATION_REQUIRED)
@@ -882,11 +889,11 @@ def db_broadcast(request):
 @api_view(['PUT'])
 def db_broadcast_receive(request):
     try:
-        #entry_list = request.data['entry_list']
+        # entry_list = request.data['entry_list']
         # TURN THE STRING REPRESENTATION OF THE LIST ACTUALLY INTO A LIST.
-        #entry_list = ast.literal_eval(entry_list)
+        # entry_list = ast.literal_eval(entry_list)
         # STRIP UNNECESSARY SPACES.
-        #entry_list = [n.strip() for n in entry_list]
+        # entry_list = [n.strip() for n in entry_list]
         # for entry in entry_list:
         #     entry = entry.split(',')
         #     Entry.objects.update_or_create(key=entry[0], defaults={'val': entry[1],
