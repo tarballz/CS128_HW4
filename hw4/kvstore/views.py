@@ -204,9 +204,22 @@ def get_state(request):
     data = {'IP': IPPORT,
             'GSL ': str(groups_sorted_list),
             'ALL NODES': str(all_nodes),
-            'PROXIES': str(proxy_nodes)
+            'PROXIES': str(proxy_nodes),
+            'MY_LB': lower_bound,
+            'MY_UB': my_upper_bound
             }
     return Response(data=data, status=200)
+
+
+@api_view(['GET'])
+def get_entries(request):
+    entries = {}
+    if len(Entry.objects.all()) > 0:
+        for entry in Entry.objects.all():
+            entries[entry.key] = entry.val
+    else:
+        entries = {"msg": "no entries :("}
+    return Response(entries, status=status.HTTP_200_OK)
 
 
 # CORRECT KEYS
@@ -449,28 +462,31 @@ def kvs_response(request, key):
         elif method == 'GET':
             if not DEBUG:
                 ping_nodes()
-            for entry in Entry.objects.all():
-                if DEBUG:
-                    print("ENTRY INFO:")
-                    print(entry.key)
-                    print(entry.val)
-                    print("END")
-                if not DEBUG:
-                    # ping_nodes()
-                    broadcast(entry.key, entry.val, entry.causal_payload, entry.node_id, entry.timestamp, 1)
+            if len(Entry.objects.all()) > 0:
+                for entry in Entry.objects.all():
+                    if DEBUG:
+                        print("ENTRY INFO:")
+                        print(entry.key)
+                        print(entry.val)
+                        print("END")
+                    if not DEBUG:
+                        # ping_nodes()
+                        broadcast(entry.key, entry.val, entry.causal_payload, entry.node_id, entry.timestamp, 1)
 
             try:
                 # KEY EXISTS
                 # TODO: There's an issue here where when a node does a PUT, ping_nodes() gets called, which calls
                 # TODO: a GET, and the entry gets made here instead of actually in the PUT.
                 existing_entry = Entry.objects.get(key=key)
-                return Response({'result': 'success', "value": existing_entry.val, "partition_id": my_upper_bound,
-                                 "causal_payload": existing_entry.causal_payload,
-                                 "timestamp": existing_entry.timestamp}, status=207)  # status.HTTP_200_OK
-            except:
+
+            except Entry.DoesNotExist:
                 # ERROR HANDLING: KEY DOES NOT EXIST
                 return Response({'result': 'error', "error": "key value store is not available"},
                                 status=status.HTTP_412_PRECONDITION_FAILED)
+
+            return Response({'result': 'success', "value": existing_entry.val, "partition_id": my_upper_bound,
+                             "causal_payload": existing_entry.causal_payload,
+                             "timestamp": existing_entry.timestamp}, status=207)  # status.HTTP_200_OK
 
 
     # PROXY RESPONSE
@@ -762,7 +778,7 @@ def update_view_pusher():
                     print(e)
                     continue
                     # return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
-        # time.sleep(2)
+        time.sleep(0.5)
         for dest_node in all_nodes:
             url_str = 'http://' + dest_node + '/kv-store/db_broadcast'
             req.put(url=url_str, data=None)
@@ -808,6 +824,7 @@ def update_view_receiver(request):
         all_nodes = new_all_nodes
         AVAILIP = new_AVAILIP
         groups_sorted_list = new_gsl
+        chunk_assign()
         print("IP: " + IPPORT + " GSL : " + str(groups_sorted_list))
         print("++++++++++++++++++++")
         print("PRINTING NEW UPDATE VIEW")
@@ -856,36 +873,50 @@ def check_nodes(request):
 @api_view(['PUT'])
 def db_broadcast(request):
     print("Made it to call broadcast!!!!")
-    resp = None
+    response = None
     entry_list = []
+    e = ''
 
-    for entry in Entry.objects.all():
-        entry_list.append(entry.__str__())
+    # for entry in Entry.objects.all():
+    #    entry_list.append(entry.__str__())
 
     global AVAILIP
 
-    # for k in all_nodes:
-    #     if True:
-    #         url_str = 'http://' + k + '/kv-store/db_broadcast_receive'
-    #         try:
-    #             res = req.put(url=url_str, data={"entry_list": "foo"}, timeout=0.5)
-    #             response = Response(res.json())
-    #             response.status_code = res.status_code
-    #             return response
-    #         except Exception as e:
-    #             print("DB EXCEPTION: %s" % (e))
-    #             AVAILIP[k] = False
-    #             continue
+    # WE ONLY NEED TO SEND EACH ENTRY TO ONE NODE OUTSIDE OF OUR UPPER_BOUND
+    # IF THIS NODE CAN ACCEPT THE ENTRY, IT WILL AND WILL THEN BROADCAST TO OTHER NODES
+    # IN IT'S CLUSTER.  IF NOT, IT WILL SELECTIVELY BROADCAST TO A NODE IN THE PROPER CLUSTER.
+    if len(Entry.objects.all()) > 0:
+        for entry in Entry.objects.all():
+            for tup in groups_sorted_list:
+                if my_upper_bound != int(tup[0]):
+                    ip_list = tup[1]
+                    for node in ip_list:
+                        url_str = 'http://' + node + '/kv-store/' + entry.key
+                        try:
+                            res = req.put(url=url_str, data={'val': entry.val,
+                                                             'causal_payload': entry.causal_payload,
+                                                             'node_id': entry.node_id,
+                                                             'timestamp': entry.timestamp,
+                                                             'is_GET_broadcast': 0}, timeout=0.5)
+                            response = Response(res.json())
+                            response.status_code = res.status_code
+                            break
+                            # return response
+                        except Exception as e:
+                            # continue
+                            return Response(
+                                {"result": "error", "error": "key value store is not available", "partition_id": my_upper_bound,
+                                 "exception": e},
+                                status=status.HTTP_511_NETWORK_AUTHENTICATION_REQUIRED)
+            break
+                            # resp = broadcast(entry.key, entry.val, entry.causal_payload, entry.node_id, entry.timestamp, 1)
 
-    for entry in Entry.objects.all():
-        resp = broadcast(entry.key, entry.val, entry.causal_payload, entry.node_id, entry.timestamp, 1)
-
-    if resp.status_code == 200:
-        return resp
-
+        # if response.status_code == 200:
+        #     return response
+    # IN THIS RETURN, WE HAVE RAN INTO THE CASE: 
+    # WHERE MY INSTANCE HAS NOTHING IN ITS DB.
     return Response({"result": "error", "error": "key value store is not available", "partition_id": my_upper_bound,
-                     "exception": e},
-                    status=status.HTTP_511_NETWORK_AUTHENTICATION_REQUIRED)
+                     "exception": e}, status=512)
 
     # return object_broadcast(Entry.objects.all())
 

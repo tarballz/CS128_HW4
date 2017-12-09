@@ -10,4 +10,5 @@ EXPOSE 8080
 WORKDIR /hw4
 RUN ["python3", "manage.py", "makemigrations"]
 RUN ["python3", "manage.py", "migrate"]
+RUN ["python3", "manage.py", "flush", "--no-input"]
 CMD ["python3", "manage.py", "runserver", "0.0.0.0:8080"]

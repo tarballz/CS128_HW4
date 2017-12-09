@@ -14,6 +14,7 @@ urlpatterns = [
     url(r'^kv-store/db_broadcast_receive', views.db_broadcast_receive),
     url(r'^kv-store/get_all_partition_ids', views.get_all_partition_ids),
     url(r'^kv-store/get_partition_members', views.get_partition_members),
+    url(r'^kv-store/get_entries', views.get_entries),
     url(r'^kv-store/(?P<key>[a-zA-Z0-9_]{1,200})$', views.kvs_response),
     url(r'^kv-store/(?P<key>[a-zA-Z0-9_]{201,})$', views.failure),
 ]
