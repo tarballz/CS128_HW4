@@ -139,7 +139,7 @@ def chunk_assign():
                         print("my_upper_bound: %s" % (my_upper_bound))
                         print("lower_bound: %s" % (lower_bound))
                     # Need this to confirm a key is within our range, and not JUST less than our value.
-                    lower_bound = upper_bound - step
+                    lower_bound = (upper_bound - step) + 1
                     # add node to our view
                     # replica_nodes.append(node)
             # increment the upper range for the next cluster of IPPORTS
@@ -778,7 +778,7 @@ def update_view_pusher():
                     print(e)
                     continue
                     # return Response({'result': 'error', 'msg': 'Server unavailable'}, status=501)
-        time.sleep(0.5)
+        # time.sleep(0.025)
         for dest_node in all_nodes:
             url_str = 'http://' + dest_node + '/kv-store/db_broadcast'
             req.put(url=url_str, data=None)
@@ -825,6 +825,7 @@ def update_view_receiver(request):
         AVAILIP = new_AVAILIP
         groups_sorted_list = new_gsl
         chunk_assign()
+
         print("IP: " + IPPORT + " GSL : " + str(groups_sorted_list))
         print("++++++++++++++++++++")
         print("PRINTING NEW UPDATE VIEW")
@@ -898,6 +899,7 @@ def db_broadcast(request):
                                                              'node_id': entry.node_id,
                                                              'timestamp': entry.timestamp,
                                                              'is_GET_broadcast': 0}, timeout=0.5)
+                            req.get(url=url_str, data=None)
                             response = Response(res.json())
                             response.status_code = res.status_code
                             break
