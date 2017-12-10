@@ -16,7 +16,6 @@ PRINT_HTTP_RESPONSES = True
 AVAILABILITY_THRESHOLD = 1
 TB = 5
 
-failed_tests = []
 
 class Node:
     def __init__(self, access_port, ip, node_id):
